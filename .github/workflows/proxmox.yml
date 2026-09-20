@@ -1,10 +1,10 @@
 name: Proxmox Infrastructure CI/CD
 on:
   pull_request:
-    paths: ["terraform/proxmox/**", "ansible/**"]
+    paths: ["terraform/proxmox/**", "ansible/**", ".github/workflows/proxmox.yml"]
   push:
     branches: [main]
-    paths: ["terraform/proxmox/**", "ansible/**"]
+    paths: ["terraform/proxmox/**", "ansible/**", ".github/workflows/proxmox.yml"]
 
 concurrency:
   group: ${{ github.workflow }}
