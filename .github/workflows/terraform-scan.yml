@@ -6,9 +6,7 @@ on:
     branches: [main]
     paths: ["terraform/**", ".github/workflows/terraform-scan.yml"]
 
-    
-# Least-privilege default
-permissions:
+permissions: # Least-privilege default
   contents: read
 
 concurrency:
@@ -27,7 +25,7 @@ jobs:
         root: [proxmox]
     defaults:
       run:
-        working-directory: terraform
+        working-directory: terraform/${{ matrix.root }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,14 +52,14 @@ jobs:
         id: tflint
         continue-on-error: true
         working-directory: .
-        run: tflint --recursive --chdir=terraform --format sarif > tflint.sarif
+        run: tflint --recursive --chdir=terraform/${{ matrix.root }} --format sarif > tflint.sarif
 
       - name: Upload tflint SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           sarif_file: tflint.sarif
-          category: tflint
+          category: tflint-${{ matrix.root }}
 
       - name: Fail on tflint findings
         if: steps.tflint.outcome == 'failure'
