@@ -1,8 +1,9 @@
-resource "proxmox_virtual_environment_download_file" "cloud_image" {
+resource "proxmox_download_file" "cloud_image" {
   content_type = "import"
   datastore_id = "local"
   node_name    = "pve"
   url          = "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img"
+  file_name    = "resolute-server-cloudimg-amd64.qcow2"
 }
 
 resource "proxmox_virtual_environment_vm" "template" {
@@ -22,9 +23,9 @@ resource "proxmox_virtual_environment_vm" "template" {
 
   disk {
     datastore_id = "local-lvm"
-    import_from  = proxmox_virtual_environment_download_file.cloud_image.id
-    interface = "virtio0"
-    size      = "20G"
+    import_from  = proxmox_download_file.cloud_image.id
+    interface    = "virtio0"
+    size         = 20
   }
 
   network_device { bridge = "vmbr1" }
