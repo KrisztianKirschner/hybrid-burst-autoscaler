@@ -27,7 +27,7 @@ resource "proxmox_virtual_environment_vm" "template" {
     datastore_id = "local-lvm"
     import_from  = proxmox_download_file.cloud_image.id
     interface    = "virtio0"
-    size         = 30
+    size         = 20
     discard      = "on"
     iothread     = true
   }
