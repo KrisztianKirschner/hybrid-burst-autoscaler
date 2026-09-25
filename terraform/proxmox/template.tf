@@ -14,6 +14,8 @@ resource "proxmox_virtual_environment_vm" "template" {
   started   = false
   machine   = "q35"
 
+  agent { enabled = false }
+
   cpu {
     cores = 2
     type  = "host"
@@ -25,7 +27,7 @@ resource "proxmox_virtual_environment_vm" "template" {
     datastore_id = "local-lvm"
     import_from  = proxmox_download_file.cloud_image.id
     interface    = "virtio0"
-    size         = 20
+    size         = 30
     discard      = "on"
     iothread     = true
   }
