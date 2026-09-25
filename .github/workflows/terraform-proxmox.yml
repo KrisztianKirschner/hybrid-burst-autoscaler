@@ -25,8 +25,8 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ['self-hosted']
     env:
-      TERRAFORM_STATE_AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_AWS_ACCESS_KEY_ID }}
-      TERRAFORM_STATE_AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_AWS_SECRET_ACCESS_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_AWS_SECRET_ACCESS_KEY }}
       TF_VAR_PROXMOX_ENDPOINT: ${{ secrets.PROXMOX_ENDPOINT }}
       TF_VAR_PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
       TF_VAR_ssh_public_key: ${{ vars.SSH_PUBLIC_KEY }}
