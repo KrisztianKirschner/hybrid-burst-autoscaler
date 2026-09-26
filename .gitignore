@@ -1,3 +1,4 @@
+# Terraform
 .terraform/
 
 *.tfstate
@@ -11,3 +12,12 @@ crash.*.log
 
 .terraformrc
 terraform.rc
+
+# Build output
+bin/
+obj/
+
+# IDE state
+.vs/          # Visual Studio
+.idea/        # Rider
+*.user
