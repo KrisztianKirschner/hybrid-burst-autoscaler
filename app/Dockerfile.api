@@ -1,0 +1,23 @@
+# https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/docker/building-net-docker-images?view=aspnetcore-10.0
+# https://devblogs.microsoft.com/dotnet/securing-containers-with-rootless/
+
+# Build stage: dotnet SDK, compiles and publishes
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Copy csproj and restore as distinct layers
+COPY src/Hba.Contracts/Hba.Contracts.csproj src/Hba.Contracts/
+COPY src/Hba.Api/Hba.Api.csproj src/Hba.Api/
+RUN dotnet restore src/Hba.Api/Hba.Api.csproj
+
+# Copy everything else and build
+COPY src/ src/
+RUN dotnet publish src/Hba.Api/Hba.Api.csproj -c Release -o /out --no-restore
+
+# Final runtime stage (rootless)
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /app
+COPY --from=build /out ./
+USER $APP_UID
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "Hba.Api.dll"]

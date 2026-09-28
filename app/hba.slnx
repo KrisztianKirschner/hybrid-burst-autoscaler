@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hba.Api/Hba.Api.csproj" />
+    <Project Path="src/Hba.Contracts/Hba.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Hba.Api.Tests/Hba.Api.Tests.csproj" />
+  </Folder>
+</Solution>
