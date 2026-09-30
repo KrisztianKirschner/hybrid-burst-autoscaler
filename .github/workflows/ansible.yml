@@ -55,11 +55,9 @@ jobs:
       - name: Install Ansible
         run: uv pip install -r requirements.txt
 
-      # Per-job collections dir: avoid using persitant directory for persistent runner
+        # Install Ansible collections (trusted persistent runner)
       - name: Install collections
-        run: |
-          ansible-galaxy collection install -r requirements.yml -p "$RUNNER_TEMP/collections"
-          echo "ANSIBLE_COLLECTIONS_PATH=$RUNNER_TEMP/collections" >> "$GITHUB_ENV"
+        run: ansible-galaxy collection install -r requirements.yml
 
       - name: Write SSH key
         env:
@@ -123,9 +121,7 @@ jobs:
         run: uv pip install -r requirements.txt
 
       - name: Install collections
-        run: |
-          ansible-galaxy collection install -r requirements.yml -p "$RUNNER_TEMP/collections"
-          echo "ANSIBLE_COLLECTIONS_PATH=$RUNNER_TEMP/collections" >> "$GITHUB_ENV"
+        run: ansible-galaxy collection install -r requirements.yml
 
       - name: Write SSH key
         env:
