@@ -1,0 +1,3 @@
+# https://github.com/ansible-collections/cloud.terraform/blob/main/docs/cloud.terraform.terraform_provider_inventory.rst
+plugin: cloud.terraform.terraform_provider
+project_path: ../terraform/proxmox

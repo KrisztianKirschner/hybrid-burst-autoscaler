@@ -1,0 +1,9 @@
+# https://docs.ansible.com/projects/ansible-core/devel/collections/ansible/builtin/constructed_inventory.html
+plugin: ansible.builtin.constructed
+strict: false
+groups:
+  swarm: cluster == 'swarm'
+  swarm_control: cluster == 'swarm' and node_role == 'control'
+  swarm_workers: cluster == 'swarm' and node_role == 'worker'
+  observability: node_role == 'observability'
+  docker: cluster == 'swarm' or node_role == 'observability'

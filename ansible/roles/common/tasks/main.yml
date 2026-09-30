@@ -1,0 +1,46 @@
+- name: Wait for cloud-init to finish
+  ansible.builtin.raw: cloud-init status --wait
+  register: common_cloud_init_result
+  changed_when: false
+  failed_when: common_cloud_init_result.rc not in [0, 2]
+
+- name: Gather facts
+  ansible.builtin.setup:
+
+- name: Disable automatic updates
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - apt-daily.timer
+    - apt-daily-upgrade.timer
+    - unattended-upgrades.service
+
+- name: Pin apt to an Ubuntu archive snapshot
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/99snapshot
+    content: |
+      APT::Snapshot "{{ common_apt_snapshot }}";
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Upgrade system to the snapshot
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+
+- name: Check if a reboot is required
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: common_reboot_required
+
+- name: Reboot if required
+  ansible.builtin.reboot:
+  when: common_reboot_required.stat.exists

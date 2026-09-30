@@ -1,0 +1,6 @@
+# https://docs.ansible.com/projects/ansible/latest/collections_guide/collections_installing.html
+collections:
+  - name: cloud.terraform # inventory from Terraform state (terraform_provider plugin)
+    version: ">=4.0.0,<5.0.0"
+  - name: community.docker
+    version: ">=5.3.0,<6.0.0"

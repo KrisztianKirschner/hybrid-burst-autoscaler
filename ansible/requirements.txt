@@ -1,0 +1,2 @@
+# Python side of the Ansible toolchain.
+ansible-core~=2.21.0

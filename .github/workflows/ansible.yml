@@ -1,0 +1,146 @@
+name: Ansible Pipeline
+on:
+  pull_request:
+    paths: ["ansible/**", ".github/workflows/ansible.yml"]
+  push:
+    branches: [main]
+    paths: ["ansible/**", ".github/workflows/ansible.yml"]
+
+# Least-privilege default
+permissions:
+  contents: read
+
+# one run per ref at a time; never cancel a run that may be mid-playbook
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ANSIBLE_FORCE_COLOR: "true"
+
+jobs:
+  ansible-check:
+    # Push/dispatch on this repo, or PRs from this repo only (fork PRs get no secrets)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ['self-hosted']
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_AWS_SECRET_ACCESS_KEY }}
+    defaults:
+      run:
+        working-directory: ansible
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      # Backend only: the inventory reads state
+      - name: Terraform init (state access for inventory)
+        working-directory: terraform/proxmox
+        run: terraform init -input=false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.13"
+          activate-environment: true
+          venv-path: ${{ runner.temp }}/venv
+
+      - name: Install Ansible
+        run: uv pip install -r requirements.txt
+
+      # Per-job collections dir: avoid using persitant directory for persistent runner
+      - name: Install collections
+        run: |
+          ansible-galaxy collection install -r requirements.yml -p "$RUNNER_TEMP/collections"
+          echo "ANSIBLE_COLLECTIONS_PATH=$RUNNER_TEMP/collections" >> "$GITHUB_ENV"
+
+      - name: Write SSH key
+        env:
+          SSH_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+        run: |
+          install -m 600 /dev/null "$RUNNER_TEMP/ansible_ssh_key"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ansible_ssh_key"
+          echo "ANSIBLE_PRIVATE_KEY_FILE=$RUNNER_TEMP/ansible_ssh_key" >> "$GITHUB_ENV"
+
+      - name: Show inventory
+        run: ansible-inventory --graph
+
+      # Logs are public: roles that handle secrets must use no_log / diff: false
+      - name: Ansible check (dry run)
+        run: ansible-playbook playbooks/site.yml --check --diff
+
+      # Clean up the key
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/ansible_ssh_key"
+
+  ansible-run:
+    # Only on main (merge or manual dispatch)
+    needs: ansible-check
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ['self-hosted']
+    # Waits for manual approval (proxmox environment)
+    environment: proxmox
+    concurrency:
+      group: terraform-proxmox-apply
+      cancel-in-progress: false
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_AWS_SECRET_ACCESS_KEY }}
+    defaults:
+      run:
+        working-directory: ansible
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init (state access for inventory)
+        working-directory: terraform/proxmox
+        run: terraform init -input=false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.13"
+          activate-environment: true
+          venv-path: ${{ runner.temp }}/venv
+
+      - name: Install Ansible
+        run: uv pip install -r requirements.txt
+
+      - name: Install collections
+        run: |
+          ansible-galaxy collection install -r requirements.yml -p "$RUNNER_TEMP/collections"
+          echo "ANSIBLE_COLLECTIONS_PATH=$RUNNER_TEMP/collections" >> "$GITHUB_ENV"
+
+      - name: Write SSH key
+        env:
+          SSH_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+        run: |
+          install -m 600 /dev/null "$RUNNER_TEMP/ansible_ssh_key"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ansible_ssh_key"
+          echo "ANSIBLE_PRIVATE_KEY_FILE=$RUNNER_TEMP/ansible_ssh_key" >> "$GITHUB_ENV"
+
+      - name: Show inventory
+        run: ansible-inventory --graph
+
+      - name: Ansible run
+        run: ansible-playbook playbooks/site.yml --diff
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/ansible_ssh_key"

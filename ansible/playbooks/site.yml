@@ -1,0 +1,7 @@
+- name: Configure all hosts
+  hosts: all
+  become: true
+  gather_facts: false
+  roles:
+    - common
+  tags: common
