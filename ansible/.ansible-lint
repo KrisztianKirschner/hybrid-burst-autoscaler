@@ -1,0 +1,6 @@
+# https://docs.ansible.com/projects/lint/configuring/
+
+profile: production
+offline: true
+enable_list:
+  - no-log-password
