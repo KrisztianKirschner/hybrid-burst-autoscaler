@@ -5,3 +5,10 @@
   roles:
     - common
   tags: common
+
+- name: Configure Docker
+  hosts: docker
+  become: true
+  roles:
+    - docker
+  tags: docker
