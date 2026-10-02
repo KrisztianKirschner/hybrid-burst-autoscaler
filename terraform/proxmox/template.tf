@@ -46,7 +46,7 @@ resource "proxmox_virtual_environment_vm" "template" {
 
     user_account {
       username = "proxima"
-      keys     = [var.ssh_public_key]
+      keys     = [for k in split("\n", var.ssh_public_key) : trimspace(k) if trimspace(k) != ""]
     }
   }
 }
