@@ -36,9 +36,11 @@ resource "proxmox_virtual_environment_vm" "vm" {
       }
     }
 
+    # cloud-init
+    # https://oneuptime.com/blog/post/2026-02-23-how-to-use-split-function-in-terraform/
     user_account {
       username = var.username
-      keys     = [var.ssh_public_key]
+      keys     = [for k in split("\n", var.ssh_public_key) : trimspace(k) if trimspace(k) != ""]
     }
   }
 }
