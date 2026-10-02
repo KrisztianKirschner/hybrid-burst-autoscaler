@@ -1,0 +1,25 @@
+# Pin and held versions of docker packages
+docker_version: "5:29.8.1-1~ubuntu.26.04~resolute"           # docker-ce + docker-ce-cli
+docker_containerd_version: "2.3.6-1~ubuntu.26.04~resolute"   # container runtime
+
+docker_packages:
+  - "docker-ce={{ docker_version }}"
+  - "docker-ce-cli={{ docker_version }}"
+  - "containerd.io={{ docker_containerd_version }}"
+  - python3-docker
+
+docker_held_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+
+docker_users:
+  - "{{ ansible_user }}"
+
+# Log rotation
+# https://docs.docker.com/reference/cli/dockerd/
+docker_daemon_options:
+  log-driver: json-file
+  log-opts:
+    max-size: "10m"
+    max-file: "3"
