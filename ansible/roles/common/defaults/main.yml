@@ -1,5 +1,6 @@
 common_packages:
   - ca-certificates
   - curl
+  - python3-debian
 
 common_apt_snapshot: "20260929T000000Z"
