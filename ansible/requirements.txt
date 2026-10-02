@@ -1,2 +1,4 @@
 # Python side of the Ansible toolchain.
-ansible-core~=2.21.0
+# 2.21 breaks cloud.terraform 4.0.0's inventory plugin (get_bin_path(required=...)),
+# see https://github.com/ansible-collections/cloud.terraform/issues/214
+ansible-core~=2.20.0
