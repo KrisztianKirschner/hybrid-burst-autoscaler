@@ -1,0 +1,8 @@
+swarm_advertise_addr: "{{ ansible_host }}"
+
+swarm_default_addr_pool:
+  - "10.200.0.0/16"
+swarm_subnet_size: 24
+
+swarm_manager_port: 2377
+swarm_manager_addr: "{{ hostvars[groups['swarm_control'][0]]['ansible_host'] }}:{{ swarm_manager_port }}"
