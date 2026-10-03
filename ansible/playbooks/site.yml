@@ -28,3 +28,11 @@
   roles:
     - swarm
   tags: swarm
+
+- name: Deploy Stacks
+  hosts: swarm_control
+  become: true
+  gather_facts: false
+  roles:
+    - stacks
+  tags: stacks

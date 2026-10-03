@@ -1,10 +1,10 @@
 name: Ansible Pipeline
 on:
   pull_request:
-    paths: ["ansible/**", ".github/workflows/ansible.yml"]
+    paths: ["ansible/**", "stacks/**", ".github/workflows/ansible.yml"]
   push:
     branches: [main]
-    paths: ["ansible/**", ".github/workflows/ansible.yml"]
+    paths: ["ansible/**", "stacks/**", ".github/workflows/ansible.yml"]
 
 # Least-privilege default
 permissions:
