@@ -1,0 +1,31 @@
+# https://docs.ansible.com/projects/ansible/latest/collections/community/docker/docker_stack_module.html
+- name: Install Module Dependencies
+  ansible.builtin.apt:
+    name:
+      - python3-jsondiff
+      - python3-yaml
+    state: present
+
+- name: Create folder
+  ansible.builtin.file:
+    path: "{{ stacks_dest_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Copy stack file
+  ansible.builtin.copy:
+    src: "{{ stacks_src }}"
+    dest: "{{ stacks_dest_dir }}/{{ stacks_name }}.yml"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Deploy stack
+  community.docker.docker_stack:
+    name: "{{ stacks_name }}"
+    state: present
+    prune: true
+    compose:
+      - "{{ stacks_dest_dir }}/{{ stacks_name }}.yml"
