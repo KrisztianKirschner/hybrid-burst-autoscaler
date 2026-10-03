@@ -1,0 +1,3 @@
+stacks_dest_dir: /opt/stacks
+stacks_name: hba
+stacks_src: "{{ playbook_dir }}/../../stacks/swarm/hba.yml"
