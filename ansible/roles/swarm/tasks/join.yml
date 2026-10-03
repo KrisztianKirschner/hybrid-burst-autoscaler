@@ -4,8 +4,9 @@
   community.docker.docker_swarm:
     state: join
     advertise_addr: "{{ swarm_advertise_addr }}"
-    join_token: "{{ hostvars[groups['swarm_control'][0]]['swarm_init']['swarm_facts']['JoinTokens']['Worker'] }}"
+    join_token: "{{ swarm_worker_token }}"
     remote_addrs:
       - "{{ swarm_manager_addr }}"
   no_log: true # Hide the join token
-  when: hostvars[groups['swarm_control'][0]]['swarm_init']['swarm_facts'] is defined
+  # No token to join with: dry run before the swarm exists
+  when: swarm_worker_token | length > 0
