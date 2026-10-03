@@ -1,0 +1,11 @@
+# https://docs.ansible.com/projects/ansible/latest/collections/community/docker/docker_swarm_module.html
+
+- name: Join swarm
+  community.docker.docker_swarm:
+    state: join
+    advertise_addr: "{{ swarm_advertise_addr }}"
+    join_token: "{{ hostvars[groups['swarm_control'][0]]['swarm_init']['swarm_facts']['JoinTokens']['Worker'] }}"
+    remote_addrs:
+      - "{{ swarm_manager_addr }}"
+  no_log: true # Hide the join token
+  when: hostvars[groups['swarm_control'][0]]['swarm_init']['swarm_facts'] is defined

@@ -12,3 +12,19 @@
   roles:
     - docker
   tags: docker
+
+- name: Initialize Swarm
+  hosts: swarm_control
+  become: true
+  gather_facts: false
+  roles:
+    - swarm
+  tags: swarm
+
+- name: Join Swarm workers
+  hosts: swarm_workers
+  become: true
+  gather_facts: false
+  roles:
+    - swarm
+  tags: swarm

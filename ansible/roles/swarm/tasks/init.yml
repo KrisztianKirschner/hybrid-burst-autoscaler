@@ -1,0 +1,17 @@
+# https://docs.ansible.com/projects/ansible/latest/collections/community/docker/docker_swarm_module.html
+
+# Fresh VM + dry run: Docker isn't installed, so the tasks below can't be simulated
+- name: Check whether Docker is installed
+  ansible.builtin.stat:
+    path: /usr/bin/dockerd
+  register: swarm_dockerd
+
+- name: Init swarm
+  community.docker.docker_swarm:
+    state: present
+    advertise_addr: "{{ swarm_advertise_addr }}"
+    default_addr_pool: "{{ swarm_default_addr_pool }}"
+    subnet_size: "{{ swarm_subnet_size }}"
+  register: swarm_init
+  no_log: true # Hide the join token
+  when: not ansible_check_mode or swarm_dockerd.stat.exists
