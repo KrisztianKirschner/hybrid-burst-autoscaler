@@ -1,0 +1,7 @@
+- name: Initialize the swarm on the control node
+  ansible.builtin.include_tasks: init.yml
+  when: inventory_hostname in groups['swarm_control']
+
+- name: Join workers to the swarm
+  ansible.builtin.include_tasks: join.yml
+  when: inventory_hostname in groups['swarm_workers']
