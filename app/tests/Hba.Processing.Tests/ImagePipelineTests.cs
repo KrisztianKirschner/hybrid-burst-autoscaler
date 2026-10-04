@@ -28,6 +28,11 @@ public sealed class ImagePipelineTests
         Assert.NotNull(format);
         Assert.Equal(expectedFormat, format.Name, ignoreCase: true);
 
+        // Extension and content type are stored next to the encoder, so check they agree with it
+        var definition = ImagePresets.Get(preset);
+        Assert.Contains(definition.OutputExtension, format.FileExtensions);
+        Assert.Equal(definition.ContentType, format.DefaultMimeType);
+
         using var output = Image.Load<Rgb24>(result);
         Assert.Equal(expectedWidth, output.Width);
         Assert.Equal(expectedHeight, output.Height);
