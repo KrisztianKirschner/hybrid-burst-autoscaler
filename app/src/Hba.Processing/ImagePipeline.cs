@@ -7,6 +7,11 @@ using SixLabors.ImageSharp.Processing;
 
 namespace Hba.Processing;
 
+/// <summary>
+/// Takes image bytes and a preset name, decodes to Rgb24, resizes, sharpens if the preset says so,
+/// and returns the encoded image bytes. It limits ImageSharp processing to one thread and disposes
+/// its image and streams after processing.
+/// </summary>
 public sealed class ImagePipeline
 {
     private readonly Configuration _configuration;
