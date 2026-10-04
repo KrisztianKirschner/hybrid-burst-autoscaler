@@ -45,15 +45,7 @@ public sealed class ImagePipeline
         });
 
         using var output = new MemoryStream();
-        if (preset.OutputExtension == "jpg")
-        {
-            image.Save(output, new JpegEncoder { Quality = preset.Quality });
-        }
-        else
-        {
-            image.Save(output, new WebpEncoder { Quality = preset.Quality });
-        }
-
+        image.Save(output, preset.Encoder);
         return output.ToArray();
     }
 }
