@@ -38,14 +38,17 @@ public sealed class ImagePipelineTests
         Assert.Equal(expectedHeight, output.Height);
     }
 
-    [Fact]
-    public void Process_ProducesSameOutputSizeForRepeatedIdenticalInput()
+    [Theory]
+    [InlineData("small")]
+    [InlineData("medium")]
+    [InlineData("large")]
+    public void Process_ProducesIdenticalOutputForRepeatedIdenticalInput(string preset)
     {
         var pipeline = new ImagePipeline();
         var input = CreateJpeg(SourceWidth, SourceHeight);
 
-        var first = pipeline.Process(input, "medium");
-        var second = pipeline.Process(input, "medium");
+        var first = pipeline.Process(input, preset);
+        var second = pipeline.Process(input, preset);
 
         Assert.Equal(first.Length, second.Length);
     }
