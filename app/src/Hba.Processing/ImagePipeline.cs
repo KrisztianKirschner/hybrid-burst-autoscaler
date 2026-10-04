@@ -35,18 +35,12 @@ public sealed class ImagePipeline
             {
                 Size = new Size(preset.MaxEdge, preset.MaxEdge),
                 Mode = ResizeMode.Max,
-                Sampler = preset.Name switch
-                {
-                    "small" => KnownResamplers.Bicubic,
-                    "medium" or "large" => KnownResamplers.Lanczos3,
-                    _ => throw new InvalidOperationException(
-                        $"Preset '{preset.Name}' has no configured resampler.")
-                }
+                Sampler = preset.Resampler
             });
 
-            if (preset.Name == "large")
+            if (preset.SharpenSigma is { } sigma)
             {
-                context.GaussianSharpen();
+                context.GaussianSharpen(sigma);
             }
         });
 
