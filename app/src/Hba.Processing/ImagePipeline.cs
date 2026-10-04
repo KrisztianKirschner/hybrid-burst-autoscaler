@@ -1,5 +1,3 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -63,3 +61,8 @@ public sealed class ImagePipeline
         return output.ToArray();
     }
 }
+
+// <summary>
+// ImagePipeline that takes image bytes and a preset name, decodes to Rgb24, resizes, and returns the encoded image bytes. It limits ImageSharp processing to one thread and disposes its image and streams after processing.
+// </summary>
+
