@@ -1,0 +1,102 @@
+using Hba.Processing;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+
+namespace Hba.Processing.Tests;
+
+public sealed class ImagePipelineTests
+{
+    private const int SourceWidth = 4000;
+    private const int SourceHeight = 3000;
+
+    [Theory]
+    [InlineData("small", 640, 480, "Jpeg")]
+    [InlineData("medium", 2048, 1536, "Webp")]
+    [InlineData("large", 3840, 2880, "Webp")]
+    public void Process_ResizesAndEncodesUsingPreset(
+        string preset,
+        int expectedWidth,
+        int expectedHeight,
+        string expectedFormat)
+    {
+        var pipeline = new ImagePipeline();
+        var input = CreateJpeg(SourceWidth, SourceHeight);
+
+        var result = pipeline.Process(input, preset);
+
+        var format = Image.DetectFormat(result);
+        Assert.NotNull(format);
+        Assert.Equal(expectedFormat, format.Name, ignoreCase: true);
+
+        using var output = Image.Load<Rgb24>(result);
+        Assert.Equal(expectedWidth, output.Width);
+        Assert.Equal(expectedHeight, output.Height);
+    }
+
+    [Fact]
+    public void Process_ProducesSameOutputSizeForRepeatedIdenticalInput()
+    {
+        var pipeline = new ImagePipeline();
+        var input = CreateJpeg(SourceWidth, SourceHeight);
+
+        var first = pipeline.Process(input, "medium");
+        var second = pipeline.Process(input, "medium");
+
+        Assert.Equal(first.Length, second.Length);
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("Medium")]
+    public void Process_RejectsUnknownPreset(string preset)
+    {
+        var pipeline = new ImagePipeline();
+        var input = CreateJpeg(64, 48);
+
+        Assert.Throws<ArgumentException>(() => pipeline.Process(input, preset));
+    }
+
+    [Fact]
+    public void Process_RejectsEmptyInput()
+    {
+        var pipeline = new ImagePipeline();
+
+        Assert.Throws<ArgumentException>(() => pipeline.Process([], "small"));
+    }
+
+    [Fact]
+    public void Presets_ExposeStableNamesAndOutputFormats()
+    {
+        Assert.Collection(
+            ImagePresets.All.OrderBy(preset => preset.Name, StringComparer.Ordinal),
+            preset =>
+            {
+                Assert.Equal("large", preset.Name);
+                Assert.Equal(3840, preset.MaxEdge);
+                Assert.Equal("webp", preset.OutputExtension);
+                Assert.Equal(90, preset.Quality);
+            },
+            preset =>
+            {
+                Assert.Equal("medium", preset.Name);
+                Assert.Equal(2048, preset.MaxEdge);
+                Assert.Equal("webp", preset.OutputExtension);
+                Assert.Equal(80, preset.Quality);
+            },
+            preset =>
+            {
+                Assert.Equal("small", preset.Name);
+                Assert.Equal(640, preset.MaxEdge);
+                Assert.Equal("jpg", preset.OutputExtension);
+                Assert.Equal(80, preset.Quality);
+            });
+    }
+
+    private static byte[] CreateJpeg(int width, int height)
+    {
+        using var image = new Image<Rgb24>(width, height, new Rgb24(80, 140, 200));
+        using var output = new MemoryStream();
+        image.SaveAsJpeg(output);
+        return output.ToArray();
+    }
+}
