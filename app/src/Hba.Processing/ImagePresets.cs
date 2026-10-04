@@ -5,9 +5,12 @@ public static class ImagePresets
     private static readonly IReadOnlyDictionary<string, ImagePresetDefinition> Definitions =
         new Dictionary<string, ImagePresetDefinition>(StringComparer.Ordinal)
         {
-            ["small"] = new("small", 640, "jpg", "image/jpeg", 80),
-            ["medium"] = new("medium", 2048, "webp", "image/webp", 80),
-            ["large"] = new("large", 3840, "webp", "image/webp", 90)
+            ["small"] = new("small", 640, KnownResamplers.Bicubic, SharpenSigma: null,
+                new JpegEncoder { Quality = 80 }, "jpg", "image/jpeg"),
+            ["medium"] = new("medium", 2048, KnownResamplers.Lanczos3, SharpenSigma: null,
+                new WebpEncoder { Quality = 80 }, "webp", "image/webp"),
+            ["large"] = new("large", 3840, KnownResamplers.Lanczos3, SharpenSigma: 3f,
+                new WebpEncoder { Quality = 90 }, "webp", "image/webp")
         };
 
     public static IReadOnlyCollection<ImagePresetDefinition> All => Definitions.Values.ToArray();
