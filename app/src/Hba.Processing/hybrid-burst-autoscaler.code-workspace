@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../hybrid-burst-autoscaler"
+		},
+		{
+			"name": "Hba.Contracts",
+			"path": "../Hba.Contracts"
+		},
+		{
+			"name": "Hba.Processing.Tests",
+			"path": "../../tests/Hba.Processing.Tests"
+		}
+	],
+	"settings": {}
+}
