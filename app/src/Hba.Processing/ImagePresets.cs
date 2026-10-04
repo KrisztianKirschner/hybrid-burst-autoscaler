@@ -4,6 +4,11 @@ using SixLabors.ImageSharp.Processing;
 
 namespace Hba.Processing;
 
+/// <summary>
+/// The fixed, named presets (docs/csharp-workload §10.2): small resizes to a 640-pixel maximum
+/// edge and outputs JPEG; medium uses 2048 pixels and WebP; large uses 3840 pixels, sharpens,
+/// and outputs WebP. Frozen once calibrated.
+/// </summary>
 public static class ImagePresets
 {
     private static readonly IReadOnlyDictionary<string, ImagePresetDefinition> Definitions =
@@ -27,7 +32,3 @@ public static class ImagePresets
             : throw new ArgumentException($"Unknown image preset '{name}'.", nameof(name));
     }
 }
-
-// <summary>
-// small resizes to a 640-pixel maximum edge and outputs JPEG; medium uses 2048 pixels and WebP; large uses 3840 pixels, sharpens, and outputs WebP
-// </summary>
