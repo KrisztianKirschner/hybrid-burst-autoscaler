@@ -1,3 +1,7 @@
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Webp;
+using SixLabors.ImageSharp.Processing;
+
 namespace Hba.Processing;
 
 public static class ImagePresets
