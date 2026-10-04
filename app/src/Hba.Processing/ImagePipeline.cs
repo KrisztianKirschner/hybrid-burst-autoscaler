@@ -22,6 +22,9 @@ public sealed class ImagePipeline
         _configuration.MaxDegreeOfParallelism = 1;
     }
 
+    // One replica = one vCPU; exposed so a test guards it
+    internal int MaxDegreeOfParallelism => _configuration.MaxDegreeOfParallelism;
+
     public byte[] Process(ReadOnlySpan<byte> source, string presetName)
     {
         if (source.IsEmpty)

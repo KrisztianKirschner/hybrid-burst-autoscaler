@@ -50,7 +50,14 @@ public sealed class ImagePipelineTests
         var first = pipeline.Process(input, preset);
         var second = pipeline.Process(input, preset);
 
-        Assert.Equal(first.Length, second.Length);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void Pipeline_IsSingleThreaded()
+    {
+        // One replica = one vCPU (docs/csharp-workload §10.1). If this fails, every scaling result is wrong.
+        Assert.Equal(1, new ImagePipeline().MaxDegreeOfParallelism);
     }
 
     [Theory]
