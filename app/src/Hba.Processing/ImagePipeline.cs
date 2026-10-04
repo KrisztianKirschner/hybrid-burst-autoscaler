@@ -1,12 +1,15 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
 namespace Hba.Processing;
 
+/// <summary>
+/// Takes image bytes and a preset name, decodes to Rgb24, resizes, sharpens if the preset says so,
+/// and returns the encoded image bytes. It limits ImageSharp processing to one thread and disposes
+/// its image and streams after processing.
+/// </summary>
 public sealed class ImagePipeline
 {
     private readonly Configuration _configuration;
@@ -16,6 +19,9 @@ public sealed class ImagePipeline
         _configuration = Configuration.Default.Clone();
         _configuration.MaxDegreeOfParallelism = 1;
     }
+
+    // One replica = one vCPU; exposed so a test guards it
+    internal int MaxDegreeOfParallelism => _configuration.MaxDegreeOfParallelism;
 
     public byte[] Process(ReadOnlySpan<byte> source, string presetName)
     {
@@ -35,36 +41,17 @@ public sealed class ImagePipeline
             {
                 Size = new Size(preset.MaxEdge, preset.MaxEdge),
                 Mode = ResizeMode.Max,
-                Sampler = preset.Name switch
-                {
-                    "small" => KnownResamplers.Bicubic,
-                    "medium" or "large" => KnownResamplers.Lanczos3,
-                    _ => throw new InvalidOperationException(
-                        $"Preset '{preset.Name}' has no configured resampler.")
-                }
+                Sampler = preset.Resampler
             });
 
-            if (preset.Name == "large")
+            if (preset.SharpenSigma is { } sigma)
             {
-                context.GaussianSharpen();
+                context.GaussianSharpen(sigma);
             }
         });
 
         using var output = new MemoryStream();
-        if (preset.OutputExtension == "jpg")
-        {
-            image.Save(output, new JpegEncoder { Quality = preset.Quality });
-        }
-        else
-        {
-            image.Save(output, new WebpEncoder { Quality = preset.Quality });
-        }
-
+        image.Save(output, preset.Encoder);
         return output.ToArray();
     }
 }
-
-// <summary>
-// ImagePipeline that takes image bytes and a preset name, decodes to Rgb24, resizes, and returns the encoded image bytes. It limits ImageSharp processing to one thread and disposes its image and streams after processing.
-// </summary>
-

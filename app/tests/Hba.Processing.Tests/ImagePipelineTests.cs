@@ -1,6 +1,8 @@
-using Hba.Processing;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace Hba.Processing.Tests;
 
@@ -28,21 +30,36 @@ public sealed class ImagePipelineTests
         Assert.NotNull(format);
         Assert.Equal(expectedFormat, format.Name, ignoreCase: true);
 
+        // Extension and content type are stored next to the encoder, so check they agree with it
+        var definition = ImagePresets.Get(preset);
+        Assert.Contains(definition.OutputExtension, format.FileExtensions);
+        Assert.Equal(definition.ContentType, format.DefaultMimeType);
+
         using var output = Image.Load<Rgb24>(result);
         Assert.Equal(expectedWidth, output.Width);
         Assert.Equal(expectedHeight, output.Height);
     }
 
-    [Fact]
-    public void Process_ProducesSameOutputSizeForRepeatedIdenticalInput()
+    [Theory]
+    [InlineData("small")]
+    [InlineData("medium")]
+    [InlineData("large")]
+    public void Process_ProducesIdenticalOutputForRepeatedIdenticalInput(string preset)
     {
         var pipeline = new ImagePipeline();
         var input = CreateJpeg(SourceWidth, SourceHeight);
 
-        var first = pipeline.Process(input, "medium");
-        var second = pipeline.Process(input, "medium");
+        var first = pipeline.Process(input, preset);
+        var second = pipeline.Process(input, preset);
 
-        Assert.Equal(first.Length, second.Length);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void Pipeline_IsSingleThreaded()
+    {
+        // One replica = one vCPU (docs/csharp-workload §10.1). If this fails, every scaling result is wrong.
+        Assert.Equal(1, new ImagePipeline().MaxDegreeOfParallelism);
     }
 
     [Theory]
@@ -73,22 +90,28 @@ public sealed class ImagePipelineTests
             {
                 Assert.Equal("large", preset.Name);
                 Assert.Equal(3840, preset.MaxEdge);
+                Assert.Equal(KnownResamplers.Lanczos3, preset.Resampler);
+                Assert.Equal(3f, preset.SharpenSigma);
+                Assert.Equal(90, Assert.IsType<WebpEncoder>(preset.Encoder).Quality);
                 Assert.Equal("webp", preset.OutputExtension);
-                Assert.Equal(90, preset.Quality);
             },
             preset =>
             {
                 Assert.Equal("medium", preset.Name);
                 Assert.Equal(2048, preset.MaxEdge);
+                Assert.Equal(KnownResamplers.Lanczos3, preset.Resampler);
+                Assert.Null(preset.SharpenSigma);
+                Assert.Equal(80, Assert.IsType<WebpEncoder>(preset.Encoder).Quality);
                 Assert.Equal("webp", preset.OutputExtension);
-                Assert.Equal(80, preset.Quality);
             },
             preset =>
             {
                 Assert.Equal("small", preset.Name);
                 Assert.Equal(640, preset.MaxEdge);
+                Assert.Equal(KnownResamplers.Bicubic, preset.Resampler);
+                Assert.Null(preset.SharpenSigma);
+                Assert.Equal(80, Assert.IsType<JpegEncoder>(preset.Encoder).Quality);
                 Assert.Equal("jpg", preset.OutputExtension);
-                Assert.Equal(80, preset.Quality);
             });
     }
 
