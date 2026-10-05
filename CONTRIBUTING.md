@@ -5,8 +5,8 @@ Conventions for working in this repo. Keep it simple: small branches, small PRs,
 ## Workflow
 
 1. Branch off `main`.
-2. Push the branch and open a PR. Direct pushes to `main` are blocked.
-3. Wait for CI (if it applies to your change), then **squash-merge**.
+2. Push the branch and open a PR. Don't push directly to `main`.
+3. Wait for CI (if it applies to your change), then merge with a **merge commit** (not squash), so each commit and its message stays in the history.
 4. The branch is deleted automatically after merge. Clean up locally with `git fetch --prune` and `git branch -d <name>`.
 
 ## Branch names
@@ -28,14 +28,16 @@ Lowercase, imperative, no type prefix:
 
 ```
 feat: add Proxmox CI/CD workflow
-fix: VM cpu type in proxmox module
+fix: set VM cpu type in proxmox module
 ```
 
-PRs are squash-merged, so the **PR title becomes the commit message on `main`**.
+PRs are merged with a merge commit, so every commit message ends up on `main`: write each one as if it stood alone. The PR title becomes the merge commit's title.
 
 ## Naming
 
-- **Files and directories:** lowercase, kebab-case (`policy.yaml`, `stacks/`).
+- **Files and directories:** lowercase, kebab-case (`policy.yaml`, `stacks/`). Two exceptions follow their tool's convention:
+  - **Ansible roles and variables:** snake_case (`node_exporter`, `swarm_advertise_addr`). ansible-lint's `role-name` rule doesn't allow hyphens.
+  - **.NET projects and source files under `app/`:** PascalCase (`Hba.Worker/`, `JobLoop.cs`).
 - **Workflow files:** `<area>.yml`, e.g. `proxmox.yml`, `aws.yml`, `ansible-lint.yml`.
 - **Terraform:** snake_case names, named by role and not by type: `aws_security_group.burst_workers`, not `aws_security_group.sg1`.
 - **Cloud resources:** prefix with `hba-` (`hba-burst-worker`, `hba-k6-loadgen`) and tag everything `Project=hybrid-burst-autoscaler`. This keeps the AWS console filterable and IAM policies narrow.
