@@ -1,0 +1,12 @@
+- name: Install node exporter
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+  register: node_exporter_install
+
+- name: Ensure service is enabled at boot
+  ansible.builtin.systemd_service:
+    name: prometheus-node-exporter
+    enabled: true
+    state: started
+  when: not (ansible_check_mode and node_exporter_install is changed)
