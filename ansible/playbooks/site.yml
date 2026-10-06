@@ -44,3 +44,11 @@
   roles:
     - stacks
   tags: stacks
+
+- name: Deploy observability stack
+  hosts: observability
+  become: true
+  gather_facts: false
+  roles:
+    - observability
+  tags: observability
