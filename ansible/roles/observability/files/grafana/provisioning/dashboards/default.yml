@@ -1,0 +1,12 @@
+# https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards
+apiVersion: 1
+
+providers:
+  - name: default
+    orgId: 1
+    type: file
+    disableDeletion: true      # deleting in the UI can't remove a dashboard that's in the repo
+    allowUiUpdates: false      # UI edits must be exported to the repo
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards   # must match the mount in compose.yml.j2
