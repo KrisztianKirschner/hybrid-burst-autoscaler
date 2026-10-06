@@ -72,6 +72,8 @@ jobs:
 
       # Logs are public: roles that handle secrets must use no_log / diff: false
       - name: Ansible check (dry run)
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
         run: ansible-playbook playbooks/site.yml --check --diff
 
       # Clean up the key
@@ -135,6 +137,8 @@ jobs:
         run: ansible-inventory --graph
 
       - name: Ansible run
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
         run: ansible-playbook playbooks/site.yml --diff
 
       - name: Remove SSH key
