@@ -29,6 +29,14 @@
     - swarm
   tags: swarm
 
+- name: Install Node Exporter
+  hosts: all
+  become: true
+  gather_facts: false
+  roles:
+    - node_exporter
+  tags: node_exporter
+
 - name: Deploy Stacks
   hosts: swarm_control
   become: true
