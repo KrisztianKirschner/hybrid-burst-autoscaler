@@ -1,0 +1,14 @@
+# https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus            # fixed: dashboards reference datasources by uid
+    type: prometheus
+    access: proxy              # Grafana's backend queries Prometheus, not the browser
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Global scrape interval, not the fastest per-job one: $__rate_interval >= 4x this
+      timeInterval: {{ observability_scrape_interval }}

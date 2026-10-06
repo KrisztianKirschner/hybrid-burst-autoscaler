@@ -1,0 +1,85 @@
+# https://docs.ansible.com/projects/ansible/latest/collections/community/docker/docker_compose_v2_module.html
+- name: Check that the Grafana admin password is set
+  ansible.builtin.assert:
+    that: observability_grafana_admin_password | length > 0
+    fail_msg: GRAFANA_ADMIN_PASSWORD is not set in the environment
+    quiet: true
+
+- name: Create directories
+  ansible.builtin.file:
+    path: "{{ observability_dest_dir }}/{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode | default('0755') }}"
+  loop:
+    - { path: prometheus }
+    - { path: grafana/provisioning/datasources }
+    - { path: grafana/provisioning/dashboards }
+    - { path: grafana/dashboards }
+    - { path: secrets, mode: "0700" }
+
+# Grafana runs as UID 472; plain Compose bind-mounts secret files as-is
+- name: Write Grafana admin password
+  ansible.builtin.copy:
+    content: "{{ observability_grafana_admin_password }}"
+    dest: "{{ observability_dest_dir }}/secrets/grafana_admin_password"
+    owner: "472"
+    group: root
+    mode: "0400"
+  no_log: true
+  diff: false
+
+- name: Render Prometheus config
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ observability_dest_dir }}/prometheus/prometheus.yml"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: >-
+      docker run --rm --user 0 -v %s:/tmp/prometheus.yml:ro
+      --entrypoint promtool {{ observability_prometheus_image }}
+      check config /tmp/prometheus.yml
+  notify: Restart prometheus
+
+- name: Render Grafana datasource
+  ansible.builtin.template:
+    src: grafana-datasources.yml.j2
+    dest: "{{ observability_dest_dir }}/grafana/provisioning/datasources/datasources.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart grafana
+
+# Directory src with trailing slash: copies the contents of files/grafana/
+- name: Copy Grafana dashboard provider and dashboards
+  ansible.builtin.copy:
+    src: grafana/
+    dest: "{{ observability_dest_dir }}/grafana/"
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Restart grafana
+
+# No notify: docker_compose_v2 recreates services whose compose config changed
+- name: Render compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ observability_dest_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+# Fresh VM + dry run: nothing above was written, so there is no project to start
+- name: Check whether the compose file is deployed
+  ansible.builtin.stat:
+    path: "{{ observability_dest_dir }}/compose.yml"
+  register: observability_compose_file
+
+- name: Start the observability stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ observability_dest_dir }}"
+    state: present
+  when: not ansible_check_mode or observability_compose_file.stat.exists
