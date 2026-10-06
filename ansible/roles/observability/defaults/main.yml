@@ -1,0 +1,16 @@
+observability_dest_dir: /opt/observability
+
+observability_prometheus_image: "prom/prometheus:v3.15.0"
+observability_grafana_image: "grafana/grafana:13.2.3"
+
+observability_prometheus_port: 9090
+observability_node_exporter_port: 9100
+observability_grafana_port: 3000
+
+# https://prometheus.io/docs/prometheus/latest/storage/
+observability_retention_time: 120d
+observability_retention_size: 30GB
+
+observability_scrape_interval: 15s
+
+observability_grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') }}"
