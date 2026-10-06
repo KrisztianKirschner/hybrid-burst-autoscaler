@@ -33,7 +33,7 @@ jobs:
 
       - run: dotnet restore
       - run: dotnet build --no-restore -c Release
-      - run: dotnet test --no-build -c Release --collect:"XPlat Code Coverage" --results-directory ./coverage
+      - run: dotnet test --no-build -c Release --collect:"XPlat Code Coverage" --results-directory ./coverage --logger "GitHubActions;summary-include-passed=true"
 
       # https://www.nuget.org/packages/dotnet-reportgenerator-globaltool
       - name: Coverage summary
@@ -41,11 +41,6 @@ jobs:
           dotnet tool install dotnet-reportgenerator-globaltool --tool-path ./tools
           ./tools/reportgenerator -reports:"coverage/**/coverage.cobertura.xml" -targetdir:coverage/report -reporttypes:MarkdownSummaryGithub
           cat coverage/report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Test summary
-        run: dotnet test --no-build -c Release --logger "GitHubActions;summary-include-passed=true"
-
-
 
 # https://docs.github.com/en/packages/managing-github-packages-using-github-actions-workflows/
   image:
