@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Amazon.S3;
 using Hba.Contracts;
 using Hba.Processing;
@@ -100,8 +101,10 @@ public sealed class JobLoop(
             return;
         }
 
+        // An unchecked preset string must never become a label value (cardinality rule, §8.1).
+        var presetLabel = PresetNames.IsKnown(message.Preset) ? message.Preset : "unknown";
         using var inProgress = metrics.TrackInProgress(options.Tier);
-        using var jobDuration = metrics.TrackJobDuration(options.Tier, message.Preset);
+        using var jobDuration = metrics.TrackJobDuration(options.Tier, presetLabel);
         var queueWait = Math.Max(0, (DateTimeOffset.UtcNow - message.SubmittedAt).TotalSeconds);
         metrics.ObserveQueueWait(options.Tier, queueWait);
 
@@ -119,6 +122,17 @@ public sealed class JobLoop(
             {
                 throw new InvalidOperationException(
                     $"Unsupported job schema version {message.SchemaVersion}.");
+            }
+
+            if (!PresetNames.IsKnown(message.Preset))
+            {
+                throw new InvalidOperationException($"Unknown preset '{message.Preset}'.");
+            }
+
+            if (!Regex.IsMatch(message.InputKey, JobMessage.InputKeyPattern))
+            {
+                throw new InvalidOperationException(
+                    $"Input key '{message.InputKey}' is outside the source set.");
             }
 
             attempt = await MarkProcessingAsync(database, message, startedAt);
@@ -172,16 +186,16 @@ public sealed class JobLoop(
                 database,
                 raw,
                 message,
-                status: "done",
+                status: JobStatus.Done,
                 DateTimeOffset.UtcNow,
                 attempt,
                 outputKey,
-                options.Tier == WorkerOptions.TierAws ? "s3" : "minio",
+                options.Tier == WorkerOptions.TierAws ? OutputStores.S3 : OutputStores.Minio,
                 error: null);
-            metrics.Completed(options.Tier, message.Preset, "done");
+            metrics.Completed(options.Tier, presetLabel, JobStatus.Done);
             LogJobSummary(
                 message,
-                "done",
+                JobStatus.Done,
                 attempt,
                 downloadSeconds,
                 processSeconds,
@@ -223,16 +237,16 @@ public sealed class JobLoop(
                     database,
                     raw,
                     message,
-                    status: "failed",
+                    status: JobStatus.Failed,
                     DateTimeOffset.UtcNow,
                     attempt,
                     outputKey: null,
                     outputStore: null,
                     error: exception.Message);
-                metrics.Completed(options.Tier, message.Preset, "failed");
+                metrics.Completed(options.Tier, presetLabel, JobStatus.Failed);
                 LogJobSummary(
                     message,
-                    "failed",
+                    JobStatus.Failed,
                     attempt,
                     downloadSeconds,
                     processSeconds,
@@ -271,18 +285,18 @@ public sealed class JobLoop(
         var statusTask = transaction.HashSetAsync(
             RedisKeys.Job(message.JobId),
             [
-                new HashEntry("status", "processing"),
-                new HashEntry("started_at", startedAt.ToString("O")),
-                new HashEntry("worker", options.NodeName),
-                new HashEntry("tier", options.Tier),
-                new HashEntry("heartbeat_at", startedAt.ToString("O"))
+                new HashEntry(JobHash.Status, JobStatus.Processing),
+                new HashEntry(JobHash.StartedAt, JobHash.FormatTimestamp(startedAt)),
+                new HashEntry(JobHash.Worker, options.NodeName),
+                new HashEntry(JobHash.Tier, options.Tier),
+                new HashEntry(JobHash.HeartbeatAt, JobHash.FormatTimestamp(startedAt))
             ]);
         var expirationTask = transaction.KeyExpireAsync(
             RedisKeys.Job(message.JobId),
-            TimeSpan.FromHours(24));
+            JobHash.Ttl);
         var attemptsTask = transaction.HashIncrementAsync(
             RedisKeys.Job(message.JobId),
-            "attempts",
+            JobHash.Attempts,
             1);
         if (!await transaction.ExecuteAsync())
         {
@@ -305,21 +319,21 @@ public sealed class JobLoop(
         string? outputStore,
         string? error)
     {
-        const string script = """
+        const string script = $"""
             if redis.call('LREM', KEYS[2], 1, ARGV[1]) == 1 then
               redis.call('HSET', KEYS[1],
-                'status', ARGV[2],
-                'finished_at', ARGV[3],
-                'attempts', ARGV[4])
+                '{JobHash.Status}', ARGV[2],
+                '{JobHash.FinishedAt}', ARGV[3],
+                '{JobHash.Attempts}', ARGV[4])
               if ARGV[5] == '' then
-                redis.call('HDEL', KEYS[1], 'error')
+                redis.call('HDEL', KEYS[1], '{JobHash.Error}')
               else
-                redis.call('HSET', KEYS[1], 'error', ARGV[5])
+                redis.call('HSET', KEYS[1], '{JobHash.Error}', ARGV[5])
               end
               if ARGV[6] ~= '' then
                 redis.call('HSET', KEYS[1],
-                  'output_store', ARGV[7],
-                  'output_key', ARGV[6])
+                  '{JobHash.OutputStore}', ARGV[7],
+                  '{JobHash.OutputKey}', ARGV[6])
               end
               return 1
             end
@@ -332,7 +346,7 @@ public sealed class JobLoop(
             [
                 raw,
                 status,
-                finishedAt.ToString("O"),
+                JobHash.FormatTimestamp(finishedAt),
                 attempt,
                 error ?? "",
                 outputKey ?? "",
@@ -351,14 +365,14 @@ public sealed class JobLoop(
         RedisValue raw,
         JobMessage message)
     {
-        const string script = """
+        const string script = $"""
             if redis.call('LREM', KEYS[1], 1, ARGV[1]) == 1 then
               redis.call('HSET', KEYS[3],
-                'status', 'queued')
-              redis.call('HDEL', KEYS[3], 'error')
+                '{JobHash.Status}', '{JobStatus.Queued}')
+              redis.call('HDEL', KEYS[3], '{JobHash.Error}')
               redis.call('HDEL', KEYS[3],
-                'started_at', 'finished_at', 'worker', 'tier', 'heartbeat_at',
-                'output_store', 'output_key')
+                '{JobHash.StartedAt}', '{JobHash.FinishedAt}', '{JobHash.Worker}', '{JobHash.Tier}', '{JobHash.HeartbeatAt}',
+                '{JobHash.OutputStore}', '{JobHash.OutputKey}')
               redis.call('RPUSH', KEYS[2], ARGV[1])
               return 1
             end
@@ -390,8 +404,8 @@ public sealed class JobLoop(
                 {
                     await database.HashSetAsync(
                         RedisKeys.Job(jobId),
-                        "heartbeat_at",
-                        DateTimeOffset.UtcNow.ToString("O"));
+                        JobHash.HeartbeatAt,
+                        JobHash.FormatTimestamp(DateTimeOffset.UtcNow));
                 }
                 catch (RedisException exception)
                 {
