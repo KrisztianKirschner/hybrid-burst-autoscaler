@@ -1,0 +1,42 @@
+# https://keepalived.readthedocs.io/en/latest/configuration_synopsis.html
+
+global_defs {
+    # Name of this machine in logs; not the VRRP ID (that is virtual_router_id)
+    router_id {{ inventory_hostname }}
+    # Check scripts must not be writable by non-root users, and run as script_user
+    enable_script_security
+    script_user keepalived_script
+}
+
+# A node that fails this check goes to FAULT and gives up the VIP.
+# curl's --max-time keeps a hanging check from blocking the next one.
+vrrp_script check_api {
+    script "/usr/bin/curl -fsS --max-time {{ keepalived_check_timeout }} -o /dev/null {{ keepalived_check_url }}"
+    interval {{ keepalived_check_interval }}
+    fall {{ keepalived_check_fall }}
+    rise {{ keepalived_check_rise }}
+}
+
+vrrp_instance hba_vip {
+    # Every node starts as BACKUP; the election by priority picks the MASTER
+    state BACKUP
+    interface {{ keepalived_interface }}
+    virtual_router_id {{ keepalived_router_id }}
+    priority {{ keepalived_priority }}
+    advert_int {{ keepalived_advert_int }}
+
+    unicast_src_ip {{ keepalived_unicast_src_ip }}
+    unicast_peer {
+{% for peer in keepalived_unicast_peers %}
+        {{ peer }}
+{% endfor %}
+    }
+
+    virtual_ipaddress {
+        {{ keepalived_vip }}/{{ keepalived_vip_prefix }}
+    }
+
+    track_script {
+        check_api
+    }
+}

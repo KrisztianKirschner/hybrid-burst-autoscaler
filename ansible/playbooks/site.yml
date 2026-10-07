@@ -45,6 +45,14 @@
     - stacks
   tags: stacks
 
+- name: Configure cluster VIP
+  hosts: swarm
+  become: true
+  gather_facts: true   # keepalived_interface comes from ansible_default_ipv4
+  roles:
+    - keepalived
+  tags: keepalived
+
 - name: Deploy observability stack
   hosts: observability
   become: true
