@@ -100,7 +100,8 @@ jobs:
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
         with:
-          command: quickview,cves
+          # quickview fails on DHI bases ("image has no base image"): https://github.com/docker/scout-cli/issues/212
+          command: cves
           # PRs: image only loaded locally; main: image was pushed to GHCR
           image: ${{ github.event_name == 'pull_request' && format('local://{0}', steps.meta.outputs.tags) || steps.meta.outputs.tags }}
           only-severities: critical,high
