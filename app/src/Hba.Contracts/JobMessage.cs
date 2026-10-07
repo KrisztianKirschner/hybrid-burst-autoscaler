@@ -12,9 +12,30 @@ public sealed record JobMessage(
 {
     public const int CurrentSchemaVersion = 1;
 
+    // Shared by ToJson and Parse so the API and the worker agree on the wire format.
+    // Missing or null fields throw JsonException instead of becoming default values.
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        RespectRequiredConstructorParameters = true,
+        RespectNullableAnnotations = true,
+    };
+
+    public static JobMessage Create(string inputKey, string preset, TimeProvider timeProvider)
+    {
+        var now = timeProvider.GetUtcNow();
+        return new JobMessage(
+            CurrentSchemaVersion,
+            Guid.CreateVersion7(now),
+            inputKey,
+            preset,
+            now);
+    }
+
+    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
+
     public static JobMessage Parse(string json)
     {
-        var message = JsonSerializer.Deserialize<JobMessage>(json)
+        var message = JsonSerializer.Deserialize<JobMessage>(json, JsonOptions)
             ?? throw new JsonException("Job message was JSON null.");
 
         if (message.JobId == Guid.Empty ||
