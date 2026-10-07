@@ -19,14 +19,14 @@ public sealed class JobReaper(
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(60);
 
-    private const string RequeueStaleScript = """
+    private static readonly string RequeueStaleScript = $"""
         if redis.call('LREM', KEYS[1], 1, ARGV[1]) == 1 then
           redis.call('RPUSH', KEYS[2], ARGV[1])
-          redis.call('HSET', KEYS[3], 'status', 'queued')
+          redis.call('HSET', KEYS[3], '{JobHash.Status}', '{JobStatus.Queued}')
           redis.call('HDEL', KEYS[3],
-            'started_at', 'finished_at', 'worker', 'tier', 'heartbeat_at',
-            'output_store', 'output_key', 'error')
-          redis.call('EXPIRE', KEYS[3], 86400)
+            '{JobHash.StartedAt}', '{JobHash.FinishedAt}', '{JobHash.Worker}', '{JobHash.Tier}', '{JobHash.HeartbeatAt}',
+            '{JobHash.OutputStore}', '{JobHash.OutputKey}', '{JobHash.Error}')
+          redis.call('EXPIRE', KEYS[3], {(long)JobHash.Ttl.TotalSeconds})
           return 1
         end
         return 0
@@ -76,7 +76,7 @@ public sealed class JobReaper(
 
             var heartbeat = await database.HashGetAsync(
                 RedisKeys.Job(message.JobId),
-                "heartbeat_at");
+                JobHash.HeartbeatAt);
             var isStale = !DateTimeOffset.TryParse(
                 heartbeat.ToString(),
                 out var heartbeatAt) ||
