@@ -1,0 +1,28 @@
+# https://keepalived.readthedocs.io/en/latest/configuration_synopsis.html
+
+keepalived_vip: "{{ cluster_vip }}"
+keepalived_vip_prefix: 24
+keepalived_interface: "{{ ansible_default_ipv4.interface }}"   # needs gather_facts: true
+
+# VRRP group ID, 1–255. Same on every node of one cluster.
+keepalived_router_id: 51
+keepalived_advert_int: 1
+
+# Highest priority wins. The control node runs api and redis, so it holds the VIP
+# by default (no routing-mesh hop). Workers share a priority; a tie goes to the highest IP.
+keepalived_priority: "{{ 150 if node_role == 'control' else 100 }}"
+
+# Unicast instead of multicast: does not depend on multicast through the Proxmox bridge
+keepalived_unicast_src_ip: "{{ ansible_host }}"
+keepalived_unicast_peers: "{{ groups[cluster] | map('extract', hostvars, 'ansible_host') | reject('equalto', ansible_host) | list }}"
+
+# Health check: a node that cannot serve the API gives up the VIP.
+# Temporary target until /healthz/live and Traefik /ping exist.
+keepalived_check_url: "http://127.0.0.1:8080/api/Test"
+keepalived_check_interval: 2   # seconds between checks
+keepalived_check_timeout: 1    # curl --max-time
+keepalived_check_fall: 2       # failures before FAULT
+keepalived_check_rise: 2       # successes before healthy again
+
+# Only the cluster under test runs keepalived, so two clusters never claim the VIP
+keepalived_enabled: "{{ cluster == active_cluster }}"
