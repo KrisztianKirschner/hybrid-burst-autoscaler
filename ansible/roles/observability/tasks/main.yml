@@ -53,7 +53,7 @@
   notify: Restart grafana
 
 # Directory src with trailing slash: copies the contents of files/grafana/
-- name: Copy Grafana dashboard provider and dashboards
+- name: Copy Grafana dashboard provider and own dashboards
   ansible.builtin.copy:
     src: grafana/
     dest: "{{ observability_dest_dir }}/grafana/"
@@ -62,6 +62,22 @@
     mode: "0644"
     directory_mode: "0755"
   notify: Restart grafana
+
+# With a matching sha256 on disk, get_url skips the download (no network needed).
+# Skipped in check mode: get_url sends HEAD there, and grafana.com answers 405.
+# No notify: the dashboard provider rescans its folder every 30 s.
+- name: Download community Grafana dashboards
+  ansible.builtin.get_url:
+    url: "https://grafana.com/api/dashboards/{{ item.id }}/revisions/{{ item.revision }}/download"
+    dest: "{{ observability_dest_dir }}/grafana/dashboards/{{ item.name }}.json"
+    checksum: "sha256:{{ item.sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ observability_grafana_community_dashboards }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.id }} rev {{ item.revision }})"
+  when: not ansible_check_mode
 
 # No notify: docker_compose_v2 recreates services whose compose config changed
 - name: Render compose file
