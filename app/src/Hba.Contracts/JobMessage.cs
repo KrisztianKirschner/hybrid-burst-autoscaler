@@ -12,6 +12,9 @@ public sealed record JobMessage(
 {
     public const int CurrentSchemaVersion = 1;
 
+    // Source objects a job may read; anything else in the bucket is off limits.
+    public const string InputKeyPattern = @"^src/[a-z0-9-]+\.(jpg|jpeg|png)$";
+
     // Shared by ToJson and Parse so the API and the worker agree on the wire format.
     // Missing or null fields throw JsonException instead of becoming default values.
     private static readonly JsonSerializerOptions JsonOptions = new()
