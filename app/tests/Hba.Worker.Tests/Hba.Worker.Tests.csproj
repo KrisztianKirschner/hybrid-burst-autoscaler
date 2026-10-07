@@ -19,6 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\contracts\job-message.example.json" Link="job-message.example.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Hba.Contracts\Hba.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Hba.Worker\Hba.Worker.csproj" />
   </ItemGroup>
