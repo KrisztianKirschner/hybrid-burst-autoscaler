@@ -14,3 +14,12 @@ observability_retention_size: 30GB
 observability_scrape_interval: 15s
 
 observability_grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') }}"
+
+# Community dashboards: downloaded unchanged from grafana.com at deploy time, not committed.
+# Own dashboards are committed in files/grafana/dashboards/ instead.
+# Bump: change revision + sha256 together (curl -sL <download url> | sha256sum)
+observability_grafana_community_dashboards:
+  - name: node-exporter-full
+    id: 1860
+    revision: 45
+    sha256: 184c6b7409f306da75525d7772f71945b10cea23ad16b5d78c4698ea0ea51986
