@@ -1,4 +1,7 @@
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Hba.Contracts;
+using Hba.Processing;
 using Hba.Worker;
 
 namespace Hba.Worker.Tests;
@@ -79,6 +82,35 @@ public sealed class WorkerContractTests
     public void Parse_RejectsMissingOrNullFields(string json)
     {
         Assert.Throws<System.Text.Json.JsonException>(() => JobMessage.Parse(json));
+    }
+
+    [Fact]
+    public void ExampleMessage_RoundTripsUnchanged()
+    {
+        var json = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "job-message.example.json"));
+
+        var message = JobMessage.Parse(json);
+
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(json), JsonNode.Parse(message.ToJson())));
+    }
+
+    [Fact]
+    public void PresetNames_MatchProcessingPresets()
+    {
+        Assert.Equal(
+            PresetNames.All.Order(),
+            ImagePresets.All.Select(preset => preset.Name).Order());
+    }
+
+    [Theory]
+    [InlineData("src/img-04.jpg", true)]
+    [InlineData("src/photo-2.png", true)]
+    [InlineData("out/0192f3c4.webp", false)]
+    [InlineData("src/../secrets.jpg", false)]
+    [InlineData("src/IMG-04.JPG", false)]
+    public void InputKeyPattern_AcceptsOnlySourceImages(string key, bool expected)
+    {
+        Assert.Equal(expected, Regex.IsMatch(key, JobMessage.InputKeyPattern));
     }
 
     [Fact]
