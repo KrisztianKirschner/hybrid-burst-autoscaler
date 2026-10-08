@@ -1,3 +1,4 @@
+using Hba.Contracts;
 using Hba.Processing;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
@@ -14,13 +15,13 @@ namespace Hba.Worker;
 
 public sealed class WarmupGate
 {
-    private readonly ImagePipeline _pipeline;
+    private readonly IImagePipeline _pipeline;
     private readonly WorkerMetrics _metrics;
     private readonly string _tier;
     private readonly int _iterations;
     private volatile bool _isComplete;
 
-    public WarmupGate(ImagePipeline pipeline, WorkerMetrics metrics, WorkerOptions options)
+    public WarmupGate(IImagePipeline pipeline, WorkerMetrics metrics, WorkerOptions options)
     {
         _pipeline = pipeline;
         _metrics = metrics;
@@ -37,7 +38,7 @@ public sealed class WarmupGate
         for (var iteration = 0; iteration < _iterations; iteration++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _ = _pipeline.Process(sample, "medium");
+            _ = _pipeline.Process(sample, PresetNames.Medium);
         }
 
         stopwatch.Stop();
