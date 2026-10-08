@@ -25,3 +25,6 @@ obj/
 # Coverage
 app/tools
 app/coverage
+
+# Local photos for docker-compose.dev.yml (not committed: size, and EXIF/GPS data)
+app/dev-images/

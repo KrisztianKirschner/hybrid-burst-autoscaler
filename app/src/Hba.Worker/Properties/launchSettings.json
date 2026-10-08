@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Hba.Worker": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:40446;http://localhost:40447"
+    }
+  }
+}

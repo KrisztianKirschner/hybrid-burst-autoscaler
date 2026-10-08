@@ -2,8 +2,12 @@
   <Folder Name="/src/">
     <Project Path="src/Hba.Api/Hba.Api.csproj" />
     <Project Path="src/Hba.Contracts/Hba.Contracts.csproj" />
+    <Project Path="src/Hba.Processing/Hba.Processing.csproj" />
+    <Project Path="src/Hba.Worker/Hba.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Hba.Api.Tests/Hba.Api.Tests.csproj" />
+    <Project Path="tests/Hba.Processing.Tests/Hba.Processing.Tests.csproj" />
+    <Project Path="tests/Hba.Worker.Tests/Hba.Worker.Tests.csproj" />
   </Folder>
 </Solution>
