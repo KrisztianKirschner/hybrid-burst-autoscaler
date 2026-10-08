@@ -71,6 +71,39 @@ public sealed class ImagePipelineTests
             $"Unexpected exception type {exception.GetType().Name}.");
     }
 
+    [Theory]
+    [InlineData("tiff")]
+    [InlineData("webp")]
+    [InlineData("gif")]
+    public void Process_RejectsFormatsOutsideTheSourceSet(string format)
+    {
+        // Only JPEG and PNG are decoded; other formats must not reach their decoders (TIFF has open advisories).
+        var pipeline = new ImagePipeline();
+        using var image = new Image<Rgb24>(64, 48, new Rgb24(80, 140, 200));
+        using var stream = new MemoryStream();
+        switch (format)
+        {
+            case "tiff": image.SaveAsTiff(stream); break;
+            case "webp": image.SaveAsWebp(stream); break;
+            case "gif": image.SaveAsGif(stream); break;
+        }
+
+        Assert.Throws<UnknownImageFormatException>(() => pipeline.Process(stream.ToArray(), "small"));
+    }
+
+    [Fact]
+    public void Process_AcceptsPng()
+    {
+        var pipeline = new ImagePipeline();
+        using var image = new Image<Rgb24>(800, 600, new Rgb24(80, 140, 200));
+        using var stream = new MemoryStream();
+        image.SaveAsPng(stream);
+
+        var result = pipeline.Process(stream.ToArray(), "small");
+
+        Assert.Equal("jpg", result.Extension);
+    }
+
     [Fact]
     public void Process_DropsSourceMetadata()
     {

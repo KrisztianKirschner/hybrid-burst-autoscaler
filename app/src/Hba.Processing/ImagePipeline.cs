@@ -1,5 +1,7 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
@@ -16,8 +18,14 @@ public sealed class ImagePipeline : IImagePipeline
 
     public ImagePipeline()
     {
-        _configuration = Configuration.Default.Clone();
-        _configuration.MaxDegreeOfParallelism = 1;
+        // Only the formats the source set uses (§7.4). ImageSharp picks the decoder from the bytes,
+        // not the key's extension, so with Configuration.Default a TIFF named "x.jpg" would still
+        // reach the TIFF decoder, which has open advisories in 3.x (fixed only in 4.1.2).
+        // Anything else now fails as UnknownImageFormatException, a permanent failure for the worker.
+        _configuration = new Configuration(new JpegConfigurationModule(), new PngConfigurationModule())
+        {
+            MaxDegreeOfParallelism = 1
+        };
     }
 
     // One replica = one vCPU; exposed so a test guards it
