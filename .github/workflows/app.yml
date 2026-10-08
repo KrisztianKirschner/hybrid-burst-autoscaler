@@ -13,9 +13,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  IMAGE: ghcr.io/krisztiankirschner/hba-api
-
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -44,8 +41,21 @@ jobs:
 
 # https://docs.github.com/en/packages/managing-github-packages-using-github-actions-workflows/
   image:
+    name: image (${{ matrix.name }})
     needs: build-test
     runs-on: ubuntu-latest
+    # https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            dockerfile: Dockerfile.api
+          - name: worker
+            dockerfile: Dockerfile.worker
+    env:
+      IMAGE: ghcr.io/krisztiankirschner/hba-${{ matrix.name }}
+
     permissions:
       contents: read
       packages: write   # push to GHCR
@@ -87,14 +97,14 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: app
-          file: app/Dockerfile.api
+          file: app/${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: ${{ github.event_name == 'push' }}          # PRs: build only; main: build + push
           load: ${{ github.event_name == 'pull_request' }}  # PRs: keep image locally for Scout
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
       - name: Docker Scout
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
@@ -117,4 +127,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: scout.sarif
-          category: scout-hba-api
+          category: scout-hba-${{ matrix.name }} 
