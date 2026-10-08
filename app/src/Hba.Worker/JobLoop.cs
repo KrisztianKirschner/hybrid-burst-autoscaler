@@ -21,7 +21,7 @@ namespace Hba.Worker;
 public sealed class JobLoop(
     IConnectionMultiplexer redis,
     IJobStorage storage,
-    ImagePipeline pipeline,
+    IImagePipeline pipeline,
     WorkerMetrics metrics,
     WarmupGate warmup,
     WorkerOptions options,
@@ -142,7 +142,7 @@ public sealed class JobLoop(
                 () => storage.GetSourceAsync(message.InputKey, CancellationToken.None),
                 seconds => downloadSeconds = seconds);
 
-            byte[] output;
+            ProcessedImage output;
             var processTimer = System.Diagnostics.Stopwatch.StartNew();
             try
             {
@@ -166,8 +166,7 @@ public sealed class JobLoop(
                 processSeconds = processTimer.Elapsed.TotalSeconds;
             }
 
-            var preset = ImagePresets.Get(message.Preset);
-            var outputKey = $"out/{message.JobId:D}.{preset.OutputExtension}";
+            var outputKey = $"out/{message.JobId:D}.{output.Extension}";
             await MeasureStageAsync(
                 options.Tier,
                 "upload",
@@ -175,8 +174,8 @@ public sealed class JobLoop(
                 {
                     await storage.PutOutputAsync(
                         outputKey,
-                        output,
-                        preset.ContentType,
+                        output.Data,
+                        output.ContentType,
                         CancellationToken.None);
                     return true;
                 },
