@@ -1,0 +1,17 @@
+# Compose doesn't notice content changes in bind-mounted files, so restart explicitly
+- name: Restart prometheus
+  community.docker.docker_compose_v2:
+    project_src: "{{ observability_dest_dir }}"
+    services:
+      - prometheus
+    state: restarted
+  when: not ansible_check_mode or observability_compose_file.stat.exists
+
+# Grafana reads provisioning files only at startup
+- name: Restart grafana
+  community.docker.docker_compose_v2:
+    project_src: "{{ observability_dest_dir }}"
+    services:
+      - grafana
+    state: restarted
+  when: not ansible_check_mode or observability_compose_file.stat.exists

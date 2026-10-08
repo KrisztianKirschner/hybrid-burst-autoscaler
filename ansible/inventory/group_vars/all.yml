@@ -1,0 +1,2 @@
+cluster_vip: 10.0.20.100
+active_cluster: swarm

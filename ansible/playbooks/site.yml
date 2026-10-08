@@ -29,6 +29,14 @@
     - swarm
   tags: swarm
 
+- name: Install Node Exporter
+  hosts: all
+  become: true
+  gather_facts: false
+  roles:
+    - node_exporter
+  tags: node_exporter
+
 - name: Deploy Stacks
   hosts: swarm_control
   become: true
@@ -36,3 +44,19 @@
   roles:
     - stacks
   tags: stacks
+
+- name: Configure cluster VIP
+  hosts: swarm
+  become: true
+  gather_facts: true   # keepalived_interface comes from ansible_default_ipv4
+  roles:
+    - keepalived
+  tags: keepalived
+
+- name: Deploy observability stack
+  hosts: observability
+  become: true
+  gather_facts: false
+  roles:
+    - observability
+  tags: observability

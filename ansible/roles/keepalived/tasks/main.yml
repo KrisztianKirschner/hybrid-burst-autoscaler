@@ -1,0 +1,52 @@
+# https://keepalived.readthedocs.io/en/latest/configuration_synopsis.html
+
+# A typo here would stop keepalived on every node, and the VIP would disappear without an error
+- name: Check that active_cluster is a known cluster
+  ansible.builtin.assert:
+    that: active_cluster in ['swarm', 'k8s']
+    fail_msg: "active_cluster must be 'swarm' or 'k8s', got '{{ active_cluster }}'"
+    quiet: true
+
+# curl is used by the health check (vrrp_script)
+- name: Install keepalived
+  ansible.builtin.apt:
+    name:
+      - keepalived
+      - curl
+    state: present
+  register: keepalived_install
+
+# With enable_script_security, check scripts run as this user instead of root
+- name: Create health check user
+  ansible.builtin.user:
+    name: keepalived_script
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create config directory
+  ansible.builtin.file:
+    path: /etc/keepalived
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Fresh VM + dry run: nothing above was really done, so there is no directory or binary yet
+- name: Render keepalived config
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: keepalived --config-test --use-file %s
+  notify: Reload keepalived
+  when: not (ansible_check_mode and keepalived_install is changed)
+
+- name: Run keepalived only on the active cluster
+  ansible.builtin.systemd_service:
+    name: keepalived
+    enabled: "{{ keepalived_enabled | bool }}"
+    state: "{{ 'started' if keepalived_enabled | bool else 'stopped' }}"
+  when: not (ansible_check_mode and keepalived_install is changed)

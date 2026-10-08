@@ -22,3 +22,7 @@ tools/
 .vs/
 .idea/
 *.user
+
+# Coverage
+app/tools
+app/coverage
