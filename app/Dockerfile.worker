@@ -1,14 +1,18 @@
+# Build stage: dotnet SDK, compiles and publishes
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# Copy csproj and restore as distinct layers
 COPY src/Hba.Contracts/Hba.Contracts.csproj src/Hba.Contracts/
 COPY src/Hba.Processing/Hba.Processing.csproj src/Hba.Processing/
 COPY src/Hba.Worker/Hba.Worker.csproj src/Hba.Worker/
 RUN dotnet restore src/Hba.Worker/Hba.Worker.csproj
 
+# Copy everything else and build
 COPY src/ src/
 RUN dotnet publish src/Hba.Worker/Hba.Worker.csproj -c Release -o /out --no-restore
 
+# Final runtime stage (rootless)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /out ./
@@ -17,9 +21,3 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD ["dotnet", "Hba.Worker.dll", "--healthcheck"]
 ENTRYPOINT ["dotnet", "Hba.Worker.dll"]
-
-#Dockerfile.worker builds and packages the worker container:
-#     -Uses the .NET 10 SDK image to restore and publish the worker and its project dependencies.
-#     -Copies the published output into a smaller ASP.NET runtime image.
-#     -Runs as the non-root app user, exposes port 8080, and uses an exec-form entry point so the worker receives shutdown signals.
-#     -Adds a container health check that runs the worker’s --healthcheck mode
