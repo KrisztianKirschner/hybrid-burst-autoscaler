@@ -16,7 +16,6 @@ terraform.rc
 # Build output
 bin/
 obj/
-tools/
 
 # IDE state
 .vs/
