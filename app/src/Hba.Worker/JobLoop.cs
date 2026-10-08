@@ -27,6 +27,7 @@ public sealed class JobLoop(
     WorkerOptions options,
     ILogger<JobLoop> logger) : BackgroundService
 {
+    private const int MaxAttempts = 3;
     private static readonly TimeSpan InitialPollDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan[] RetryDelays =
     [
@@ -143,6 +144,14 @@ public sealed class JobLoop(
             }
 
             attempt = await MarkProcessingAsync(database, message, startedAt);
+            if (attempt > MaxAttempts)
+            {
+                // Attempts that ended in a worker crash are only counted here, on the next claim.
+                // Without this check a job that kills its worker would be reaped and retried forever.
+                throw new InvalidOperationException(
+                    $"Gave up: job was already attempted {attempt - 1} times (crashed worker or lost heartbeat).");
+            }
+
             if (attempt == 1)
             {
                 // Only the first attempt: a retry's wait would also include the earlier attempt.
@@ -194,16 +203,20 @@ public sealed class JobLoop(
                 },
                 seconds => uploadSeconds = seconds);
 
-            await CompleteAsync(
-                database,
-                raw,
-                message,
-                status: JobStatus.Done,
-                DateTimeOffset.UtcNow,
-                attempt,
-                outputKey,
-                options.Tier == WorkerOptions.TierAws ? OutputStores.S3 : OutputStores.Minio,
-                error: null);
+            if (!await CompleteAsync(
+                    database,
+                    raw,
+                    message,
+                    status: JobStatus.Done,
+                    DateTimeOffset.UtcNow,
+                    outputKey,
+                    options.Tier == WorkerOptions.TierAws ? OutputStores.S3 : OutputStores.Minio,
+                    error: null))
+            {
+                LogTakenBack(message);
+                return;
+            }
+
             // Only successful jobs: the metric has no status label, so failed or retried attempts
             // would skew the per-tier duration comparison.
             metrics.ObserveJobDuration(options.Tier, presetLabel, jobTimer.Elapsed.TotalSeconds);
@@ -222,7 +235,12 @@ public sealed class JobLoop(
             {
                 if (IsTransient(exception) && attempt == 0)
                 {
-                    await RequeueAsync(database, raw, message);
+                    if (!await JobScripts.RequeueAsync(database, raw, message.JobId))
+                    {
+                        LogTakenBack(message);
+                        return;
+                    }
+
                     logger.LogWarning(
                         exception,
                         "Returned job {JobId} to the queue because Redis failed before processing started.",
@@ -230,11 +248,16 @@ public sealed class JobLoop(
                     return;
                 }
 
-                if (IsTransient(exception) && attempt > 0 && attempt < 3)
+                if (IsTransient(exception) && attempt > 0 && attempt < MaxAttempts)
                 {
                     var delay = RetryDelays[Math.Min(attempt - 1, RetryDelays.Length - 1)];
                     await Task.Delay(delay, CancellationToken.None);
-                    await RequeueAsync(database, raw, message);
+                    if (!await JobScripts.RequeueAsync(database, raw, message.JobId))
+                    {
+                        LogTakenBack(message);
+                        return;
+                    }
+
                     logger.LogWarning(
                         exception,
                         "Job {JobId} will be retried after attempt {Attempt}.",
@@ -248,16 +271,20 @@ public sealed class JobLoop(
                     attempt = await MarkProcessingAsync(database, message, startedAt);
                 }
 
-                await CompleteAsync(
-                    database,
-                    raw,
-                    message,
-                    status: JobStatus.Failed,
-                    DateTimeOffset.UtcNow,
-                    attempt,
-                    outputKey: null,
-                    outputStore: null,
-                    error: exception.Message);
+                if (!await CompleteAsync(
+                        database,
+                        raw,
+                        message,
+                        status: JobStatus.Failed,
+                        DateTimeOffset.UtcNow,
+                        outputKey: null,
+                        outputStore: null,
+                        error: exception.Message))
+                {
+                    LogTakenBack(message);
+                    return;
+                }
+
                 metrics.Completed(options.Tier, presetLabel, JobStatus.Failed);
                 LogJobSummary(
                     message,
@@ -323,13 +350,18 @@ public sealed class JobLoop(
         return (int)await attemptsTask;
     }
 
-    private static async Task CompleteAsync(
+    /// <summary>
+    /// Removes the message from the processing list and records the final status, atomically.
+    /// Returns false if the message was no longer there: the reaper took the job back meanwhile
+    /// and another attempt owns it now. <c>attempts</c> is not written here; MarkProcessingAsync
+    /// already incremented it, and rewriting it could move the counter backwards.
+    /// </summary>
+    private static async Task<bool> CompleteAsync(
         IDatabase database,
         RedisValue raw,
         JobMessage message,
         string status,
         DateTimeOffset finishedAt,
-        int attempt,
         string? outputKey,
         string? outputStore,
         string? error)
@@ -338,17 +370,16 @@ public sealed class JobLoop(
             if redis.call('LREM', KEYS[2], 1, ARGV[1]) == 1 then
               redis.call('HSET', KEYS[1],
                 '{JobHash.Status}', ARGV[2],
-                '{JobHash.FinishedAt}', ARGV[3],
-                '{JobHash.Attempts}', ARGV[4])
-              if ARGV[5] == '' then
+                '{JobHash.FinishedAt}', ARGV[3])
+              if ARGV[4] == '' then
                 redis.call('HDEL', KEYS[1], '{JobHash.Error}')
               else
-                redis.call('HSET', KEYS[1], '{JobHash.Error}', ARGV[5])
+                redis.call('HSET', KEYS[1], '{JobHash.Error}', ARGV[4])
               end
-              if ARGV[6] ~= '' then
+              if ARGV[5] ~= '' then
                 redis.call('HSET', KEYS[1],
-                  '{JobHash.OutputStore}', ARGV[7],
-                  '{JobHash.OutputKey}', ARGV[6])
+                  '{JobHash.OutputStore}', ARGV[6],
+                  '{JobHash.OutputKey}', ARGV[5])
               end
               return 1
             end
@@ -362,48 +393,18 @@ public sealed class JobLoop(
                 raw,
                 status,
                 JobHash.FormatTimestamp(finishedAt),
-                attempt,
                 error ?? "",
                 outputKey ?? "",
                 outputStore ?? ""
             ]);
 
-        if ((long)result != 1)
-        {
-            throw new RedisException(
-                $"Job {message.JobId} was not in the processing list when finalizing.");
-        }
+        return (long)result == 1;
     }
 
-    private static async Task RequeueAsync(
-        IDatabase database,
-        RedisValue raw,
-        JobMessage message)
-    {
-        const string script = $"""
-            if redis.call('LREM', KEYS[1], 1, ARGV[1]) == 1 then
-              redis.call('HSET', KEYS[3],
-                '{JobHash.Status}', '{JobStatus.Queued}')
-              redis.call('HDEL', KEYS[3], '{JobHash.Error}')
-              redis.call('HDEL', KEYS[3],
-                '{JobHash.StartedAt}', '{JobHash.FinishedAt}', '{JobHash.Worker}', '{JobHash.Tier}', '{JobHash.HeartbeatAt}',
-                '{JobHash.OutputStore}', '{JobHash.OutputKey}')
-              redis.call('RPUSH', KEYS[2], ARGV[1])
-              return 1
-            end
-            return 0
-            """;
-
-        var result = await database.ScriptEvaluateAsync(
-            script,
-            [RedisKeys.Processing, RedisKeys.Jobs, RedisKeys.Job(message.JobId)],
-            [raw]);
-        if ((long)result != 1)
-        {
-            throw new RedisException(
-                $"Job {message.JobId} could not be atomically returned to the queue.");
-        }
-    }
+    private void LogTakenBack(JobMessage message) =>
+        logger.LogWarning(
+            "Job {JobId} was taken back by the reaper while this worker held it; another attempt owns it now, so this result is discarded.",
+            message.JobId);
 
     private async Task RunHeartbeatAsync(
         IDatabase database,

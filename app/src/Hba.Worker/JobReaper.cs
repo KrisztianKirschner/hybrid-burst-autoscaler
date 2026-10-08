@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Hba.Contracts;
 using StackExchange.Redis;
@@ -9,7 +10,7 @@ namespace Hba.Worker;
 //JobReaper.cs is a background safety-net service:
 //      -Every 30 seconds, it checks Redis’s processing list for jobs that workers have taken.
 //      -For each job, it reads heartbeat_at from that job’s status record.
-//      -If the heartbeat is missing or older than 60 seconds, it assumes the worker died and atomically moves the job back to the waiting queue.
+//      -If the heartbeat is older than 60 seconds, or missing on two passes in a row, it assumes the worker died and atomically moves the job back to the waiting queue.
 //      -It updates the job status and logs recovered jobs. This lets another worker retry them instead of leaving them stuck.
 
 public sealed class JobReaper(
@@ -19,18 +20,10 @@ public sealed class JobReaper(
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(60);
 
-    private static readonly string RequeueStaleScript = $"""
-        if redis.call('LREM', KEYS[1], 1, ARGV[1]) == 1 then
-          redis.call('RPUSH', KEYS[2], ARGV[1])
-          redis.call('HSET', KEYS[3], '{JobHash.Status}', '{JobStatus.Queued}')
-          redis.call('HDEL', KEYS[3],
-            '{JobHash.StartedAt}', '{JobHash.FinishedAt}', '{JobHash.Worker}', '{JobHash.Tier}', '{JobHash.HeartbeatAt}',
-            '{JobHash.OutputStore}', '{JobHash.OutputKey}', '{JobHash.Error}')
-          redis.call('EXPIRE', KEYS[3], {(long)JobHash.Ttl.TotalSeconds})
-          return 1
-        end
-        return 0
-        """;
+    // Messages whose job had no heartbeat on the previous pass. Between LMOVE and the worker's
+    // first HSET a freshly claimed job has no heartbeat for one round trip; reaping it then
+    // would process it twice (more often on burst nodes, whose Redis round trip is longer).
+    private HashSet<string> _missingHeartbeatLastPass = [];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -57,7 +50,43 @@ public sealed class JobReaper(
     {
         var messages = await database.ListRangeAsync(RedisKeys.Processing);
         var now = DateTimeOffset.UtcNow;
+        var missingHeartbeatThisPass = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            await ReapAsync(database, messages, now, missingHeartbeatThisPass, cancellationToken);
+        }
+        finally
+        {
+            _missingHeartbeatLastPass = missingHeartbeatThisPass;
+        }
+    }
 
+    /// <summary>
+    /// A job is stale if its heartbeat is older than <paramref name="staleAfter"/>, or if it has had
+    /// no heartbeat on two consecutive passes. One missing observation is not enough: the worker may
+    /// have claimed it a moment ago and not written its first heartbeat yet.
+    /// </summary>
+    public static bool IsStale(
+        string? heartbeat,
+        bool missingOnPreviousPass,
+        DateTimeOffset now,
+        TimeSpan staleAfter)
+    {
+        if (DateTimeOffset.TryParse(heartbeat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var heartbeatAt))
+        {
+            return now - heartbeatAt > staleAfter;
+        }
+
+        return missingOnPreviousPass;
+    }
+
+    private async Task ReapAsync(
+        IDatabase database,
+        RedisValue[] messages,
+        DateTimeOffset now,
+        HashSet<string> missingHeartbeatThisPass,
+        CancellationToken cancellationToken)
+    {
         foreach (var raw in messages)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -82,25 +111,20 @@ public sealed class JobReaper(
             var heartbeat = await database.HashGetAsync(
                 RedisKeys.Job(message.JobId),
                 JobHash.HeartbeatAt);
-            var isStale = !DateTimeOffset.TryParse(
-                heartbeat.ToString(),
-                out var heartbeatAt) ||
-                now - heartbeatAt > StaleAfter;
-            if (!isStale)
+            var key = raw.ToString();
+            if (heartbeat.IsNullOrEmpty)
+            {
+                missingHeartbeatThisPass.Add(key);
+            }
+
+            if (!IsStale(heartbeat, _missingHeartbeatLastPass.Contains(key), now, StaleAfter))
             {
                 continue;
             }
 
-            var result = await database.ScriptEvaluateAsync(
-                RequeueStaleScript,
-                [
-                    RedisKeys.Processing,
-                    RedisKeys.Jobs,
-                    RedisKeys.Job(message.JobId)
-                ],
-                [raw]);
-            if ((long)result == 1)
+            if (await JobScripts.RequeueAsync(database, raw, message.JobId))
             {
+                missingHeartbeatThisPass.Remove(key);
                 logger.LogWarning(
                     "Returned stale job {JobId} to the queue after its worker heartbeat expired.",
                     message.JobId);
