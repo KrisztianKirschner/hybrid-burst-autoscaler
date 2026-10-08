@@ -28,6 +28,7 @@ public sealed class JobLoop(
     ILogger<JobLoop> logger) : BackgroundService
 {
     private const int MaxAttempts = 3;
+    private const int ShutdownSafetyMarginSeconds = 5;
     private static readonly TimeSpan InitialPollDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan[] RetryDelays =
     [
@@ -76,7 +77,7 @@ public sealed class JobLoop(
             pollDelay = InitialPollDelay;
             try
             {
-                await ProcessOneAsync(database, raw);
+                await ProcessOneAsync(database, raw, stoppingToken);
             }
             catch (Exception exception)
             {
@@ -87,9 +88,11 @@ public sealed class JobLoop(
         }
     }
 
+    // stoppingToken never cancels the job itself (§10.3); it only arms the shutdown safety net.
     private async Task ProcessOneAsync(
         IDatabase database,
-        RedisValue raw)
+        RedisValue raw,
+        CancellationToken stoppingToken)
     {
         JobMessage message;
         try
@@ -117,6 +120,9 @@ public sealed class JobLoop(
 
         var heartbeatCancellation = new CancellationTokenSource();
         var heartbeat = RunHeartbeatAsync(database, message.JobId, heartbeatCancellation.Token);
+        var jobFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var shutdownSafetyNet = RequeueIfStillRunningAtShutdownAsync(
+            database, raw, message, jobFinished.Task, stoppingToken);
         var downloadSeconds = 0d;
         var processSeconds = 0d;
         var uploadSeconds = 0d;
@@ -305,6 +311,8 @@ public sealed class JobLoop(
         }
         finally
         {
+            jobFinished.TrySetResult();
+            await shutdownSafetyNet;
             await heartbeatCancellation.CancelAsync();
             try
             {
@@ -403,8 +411,58 @@ public sealed class JobLoop(
 
     private void LogTakenBack(JobMessage message) =>
         logger.LogWarning(
-            "Job {JobId} was taken back by the reaper while this worker held it; another attempt owns it now, so this result is discarded.",
+            "Job {JobId} was returned to the queue (by the reaper or the shutdown safety net) while this worker held it; another attempt owns it now, so this result is discarded.",
             message.JobId);
+
+    /// <summary>
+    /// Safety net for §10.3: if the worker is told to stop while a job is still running and the job
+    /// hasn't finished shortly before the host's shutdown timeout, return it to the queue so another
+    /// worker can start it at once. Without this the process would exit with the job still in the
+    /// processing list, and only a reaper could recover it, 60–90 s later, or never if the service
+    /// has scaled to zero. If the job does finish afterwards, its completion finds no message left
+    /// and is discarded (LogTakenBack).
+    /// </summary>
+    private async Task RequeueIfStillRunningAtShutdownAsync(
+        IDatabase database,
+        RedisValue raw,
+        JobMessage message,
+        Task jobFinished,
+        CancellationToken stoppingToken)
+    {
+        try
+        {
+            // A linked source, cancelled once the job is done, so the infinite delay doesn't leave a
+            // registration on stoppingToken behind for every job the worker ever ran.
+            using var untilStopping = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            var stopping = Task.Delay(Timeout.Infinite, untilStopping.Token);
+            if (await Task.WhenAny(jobFinished, stopping) == jobFinished)
+            {
+                await untilStopping.CancelAsync();
+                return;
+            }
+
+            // Leave enough of the host's shutdown timeout for the requeue itself to reach Redis.
+            var budget = TimeSpan.FromSeconds(Math.Max(0, options.ShutdownTimeoutSeconds - ShutdownSafetyMarginSeconds));
+            if (await Task.WhenAny(jobFinished, Task.Delay(budget)) == jobFinished)
+            {
+                return;
+            }
+
+            if (await JobScripts.RequeueAsync(database, raw, message.JobId))
+            {
+                logger.LogWarning(
+                    "Shutdown deadline reached while job {JobId} was still running; returned it to the queue.",
+                    message.JobId);
+            }
+        }
+        catch (Exception exception) when (RedisErrors.IsRedisFailure(exception))
+        {
+            logger.LogError(
+                exception,
+                "Could not return job {JobId} to the queue at shutdown; a reaper will recover it.",
+                message.JobId);
+        }
+    }
 
     private async Task RunHeartbeatAsync(
         IDatabase database,
