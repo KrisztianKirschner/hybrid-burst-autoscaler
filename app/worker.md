@@ -13,9 +13,9 @@ selected for its tier, runs `Hba.Processing`, and writes the output under
 | `HBA_TIER` | no | `auto` | `onprem`, `aws`, or infer from the node name |
 | `HBA_NODE_NAME` | for `auto` | none | Names beginning with `burst-` resolve to `aws`; other names resolve to `onprem` |
 | `HBA_S3_BUCKET` | yes | none | Bucket name shared by the selected object store |
-| `HBA_S3_ENDPOINT_ONPREM` | on-prem only | none | MinIO URL, for example `http://minio:9000` |
-| `HBA_S3_ACCESS_KEY` or `HBA_S3_ACCESS_KEY_FILE` | on-prem only | none | MinIO access key, as a value or as a path to a file holding it |
-| `HBA_S3_SECRET_KEY` or `HBA_S3_SECRET_KEY_FILE` | on-prem only | none | MinIO secret key, as a value or as a path to a file holding it |
+| `HBA_S3_ENDPOINT_ONPREM` | on-prem only | none | RustFS URL, for example `http://rustfs:9000` |
+| `HBA_S3_ACCESS_KEY` or `HBA_S3_ACCESS_KEY_FILE` | on-prem only | none | RustFS access key, as a value or as a path to a file holding it |
+| `HBA_S3_SECRET_KEY` or `HBA_S3_SECRET_KEY_FILE` | on-prem only | none | RustFS secret key, as a value or as a path to a file holding it |
 | `HBA_S3_REGION` | no | `eu-central-1` | AWS region, checked against the SDK's list of known regions; AWS credentials come from the default SDK credential chain |
 | `HBA_IDLE_POLL_MAX_MS` | no | `500` | Maximum delay while the queue is empty |
 | `HBA_WARMUP_ITERATIONS` | no | `3` | Medium-preset warm-up runs; `0` disables warm-up |
@@ -23,13 +23,13 @@ selected for its tier, runs `Hba.Processing`, and writes the output under
 
 **Secrets on Swarm:** Swarm mounts secrets as files under `/run/secrets/` and can't
 turn them into environment variables, so use the `_FILE` form there, for example
-`HBA_S3_SECRET_KEY_FILE=/run/secrets/minio_secret_key`. Setting both the value and
+`HBA_S3_SECRET_KEY_FILE=/run/secrets/s3_secret_key`. Setting both the value and
 the `_FILE` variable is an error. On Kubernetes either form works.
 
 An invalid configuration makes the worker print one `Invalid worker configuration: …`
 line to stderr and exit with code 1.
 
-For local on-prem development, set the MinIO endpoint and credentials, bucket,
+For local on-prem development, set the RustFS endpoint and credentials, bucket,
 and either set `HBA_TIER=onprem` or provide `HBA_NODE_NAME`. For AWS, set
 `HBA_TIER=aws` (or inject a `burst-` node name) and use an instance profile; do
 not configure static AWS keys.
@@ -50,6 +50,6 @@ Build the Linux worker image from the `app` directory with
 
 <!-- worker.md documents how to configure, run, and publish the worker: -->
 <!-- Lists the worker’s environment variables, required settings, and defaults.
-     Explains how tier selection chooses MinIO for on-prem workers and S3 for AWS workers.
-D    escribes the worker’s health and metrics endpoints.
+     Explains how tier selection chooses RustFS for on-prem workers and S3 for AWS workers.
+     Describes the worker’s health and metrics endpoints.
      Provides commands to test, publish, and build the Docker image -->

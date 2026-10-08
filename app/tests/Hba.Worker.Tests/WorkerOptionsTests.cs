@@ -8,7 +8,7 @@ public sealed class WorkerOptionsTests
     {
         ["HBA_TIER"] = "onprem",
         ["HBA_S3_BUCKET"] = "hba",
-        ["HBA_S3_ENDPOINT_ONPREM"] = "http://minio:9000",
+        ["HBA_S3_ENDPOINT_ONPREM"] = "http://rustfs:9000",
         ["HBA_S3_ACCESS_KEY"] = "access-key-value",
         ["HBA_S3_SECRET_KEY"] = "secret-key-value",
     };
@@ -50,7 +50,7 @@ public sealed class WorkerOptionsTests
     public void Secret_RejectsBothValueAndFile()
     {
         var variables = ValidOnPrem();
-        variables["HBA_S3_SECRET_KEY_FILE"] = "/run/secrets/minio_secret_key";
+        variables["HBA_S3_SECRET_KEY_FILE"] = "/run/secrets/s3_secret_key";
 
         Assert.Throws<InvalidOperationException>(() => Load(variables));
     }

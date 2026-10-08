@@ -7,10 +7,10 @@ namespace Hba.Worker;
 
 //summary
 //JobStorage.cs handles image files in object storage:
-//      -It chooses MinIO for onprem workers or Amazon S3 for aws workers.
+//      -It chooses RustFS for onprem workers or Amazon S3 for aws workers.
 //      -It downloads a source image by key and returns its bytes.
 //      -It uploads processed image bytes with the output content type.
-//      -On AWS, it uses the SDK’s default credential chain, so credentials can come from the instance profile; on-prem uses the configured MinIO endpoint and credentials.
+//      -On AWS, it uses the SDK’s default credential chain, so credentials can come from the instance profile; on-prem uses the configured RustFS endpoint and credentials.
 
 
 public interface IJobStorage

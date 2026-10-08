@@ -8,7 +8,7 @@ namespace Hba.Worker;
 // WorkerOptions.cs loads and validates the worker’s environment-based configuration:
 //      -Reads Redis, storage, tier, polling, warm-up, and shutdown settings, applying defaults where allowed.
 //      -Resolves the worker tier from HBA_TIER, or in auto mode from HBA_NODE_NAME (burst-... means AWS).
-//      -Requires the bucket and, for on-prem workers, a valid MinIO endpoint and credentials.
+//      -Requires the bucket and, for on-prem workers, a valid RustFS endpoint and credentials.
 //      -Fails early with a clear error if configuration is missing or invalid
 
 
@@ -152,7 +152,7 @@ public sealed record WorkerOptions(
         }
     }
 
-    // Records print every property by default; keep the MinIO keys and any Redis password out of logs.
+    // Records print every property by default; keep the RustFS keys and any Redis password out of logs.
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append($"Redis = {RedactRedis(Redis)}, ");

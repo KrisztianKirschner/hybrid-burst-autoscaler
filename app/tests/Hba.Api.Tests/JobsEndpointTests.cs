@@ -138,7 +138,7 @@ public sealed class JobsEndpointTests
             [JobHash.Status] = JobStatus.Done,
             [JobHash.Preset] = PresetNames.Medium,
             [JobHash.InputKey] = "src/img-04.jpg",
-            [JobHash.OutputStore] = OutputStores.Minio,
+            [JobHash.OutputStore] = OutputStores.RustFs,
             [JobHash.OutputKey] = $"out/{jobId:D}.webp",
             [JobHash.Attempts] = "1",
         };
@@ -147,7 +147,7 @@ public sealed class JobsEndpointTests
 
         Assert.Equal(jobId, body.GetProperty("job_id").GetGuid());
         Assert.Equal(JobStatus.Done, body.GetProperty("status").GetString());
-        Assert.Equal(OutputStores.Minio, body.GetProperty("output_store").GetString());
+        Assert.Equal(OutputStores.RustFs, body.GetProperty("output_store").GetString());
         Assert.Equal(1, body.GetProperty("attempts").GetInt32());
         Assert.Equal(JsonValueKind.Null, body.GetProperty("error").ValueKind);
     }

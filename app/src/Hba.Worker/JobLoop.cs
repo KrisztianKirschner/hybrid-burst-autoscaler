@@ -216,7 +216,7 @@ public sealed class JobLoop(
                     status: JobStatus.Done,
                     DateTimeOffset.UtcNow,
                     outputKey,
-                    options.Tier == WorkerOptions.TierAws ? OutputStores.S3 : OutputStores.Minio,
+                    options.Tier == WorkerOptions.TierAws ? OutputStores.S3 : OutputStores.RustFs,
                     error: null))
             {
                 LogTakenBack(message);
