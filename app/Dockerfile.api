@@ -18,6 +18,8 @@ RUN dotnet publish src/Hba.Api/Hba.Api.csproj -c Release -o /out --no-restore
 FROM dhi.io/aspnetcore:10 AS final
 WORKDIR /app
 COPY --from=build /out ./
-USER $APP_UID
+# DHI runtime images run as the non-root user 65532 and don't define APP_UID (only Microsoft's
+# images do), so USER $APP_UID would expand to nothing and the container would run as root.
+USER 65532
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Hba.Api.dll"]

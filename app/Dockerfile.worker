@@ -16,7 +16,9 @@ RUN dotnet publish src/Hba.Worker/Hba.Worker.csproj -c Release -o /out --no-rest
 FROM dhi.io/aspnetcore:10 AS final
 WORKDIR /app
 COPY --from=build /out ./
-USER $APP_UID
+# DHI runtime images run as the non-root user 65532 and don't define APP_UID (only Microsoft's
+# images do), so USER $APP_UID would expand to nothing and the container would run as root.
+USER 65532
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD ["dotnet", "Hba.Worker.dll", "--healthcheck"]
