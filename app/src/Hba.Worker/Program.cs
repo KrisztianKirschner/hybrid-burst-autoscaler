@@ -20,13 +20,26 @@ public static class Program
             return await RunHealthcheckAsync();
         }
 
-        var options = WorkerOptions.FromEnvironment();
+        WorkerOptions options;
+        try
+        {
+            options = WorkerOptions.FromEnvironment();
+        }
+        catch (InvalidOperationException exception)
+        {
+            // Logging isn't set up yet: one clear line instead of an unhandled-exception stack trace.
+            await Console.Error.WriteLineAsync($"Invalid worker configuration: {exception.Message}");
+            return 1;
+        }
+
         var builder = WebApplication.CreateBuilder(args);
         builder.WebHost.UseUrls("http://0.0.0.0:8080");
         builder.Services.Configure<HostOptions>(host =>
             host.ShutdownTimeout = TimeSpan.FromSeconds(options.ShutdownTimeoutSeconds));
         builder.Logging.ClearProviders();
         builder.Logging.AddJsonConsole();
+        // Otherwise every Prometheus scrape and health probe logs two Information lines (§8.5).
+        builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
         {

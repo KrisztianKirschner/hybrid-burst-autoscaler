@@ -14,12 +14,20 @@ selected for its tier, runs `Hba.Processing`, and writes the output under
 | `HBA_NODE_NAME` | for `auto` | none | Names beginning with `burst-` resolve to `aws`; other names resolve to `onprem` |
 | `HBA_S3_BUCKET` | yes | none | Bucket name shared by the selected object store |
 | `HBA_S3_ENDPOINT_ONPREM` | on-prem only | none | MinIO URL, for example `http://minio:9000` |
-| `HBA_S3_ACCESS_KEY` | on-prem only | none | MinIO access key; supply as an orchestrator secret |
-| `HBA_S3_SECRET_KEY` | on-prem only | none | MinIO secret key; supply as an orchestrator secret |
-| `HBA_S3_REGION` | no | `eu-central-1` | AWS region; AWS credentials come from the default SDK credential chain |
+| `HBA_S3_ACCESS_KEY` or `HBA_S3_ACCESS_KEY_FILE` | on-prem only | none | MinIO access key, as a value or as a path to a file holding it |
+| `HBA_S3_SECRET_KEY` or `HBA_S3_SECRET_KEY_FILE` | on-prem only | none | MinIO secret key, as a value or as a path to a file holding it |
+| `HBA_S3_REGION` | no | `eu-central-1` | AWS region, checked against the SDK's list of known regions; AWS credentials come from the default SDK credential chain |
 | `HBA_IDLE_POLL_MAX_MS` | no | `500` | Maximum delay while the queue is empty |
 | `HBA_WARMUP_ITERATIONS` | no | `3` | Medium-preset warm-up runs; `0` disables warm-up |
-| `HBA_SHUTDOWN_TIMEOUT_SECONDS` | no | `25` | .NET host graceful-shutdown timeout |
+| `HBA_SHUTDOWN_TIMEOUT_SECONDS` | no | `25` | .NET host graceful-shutdown timeout; 1–29, below the orchestrators' 30 s grace period |
+
+**Secrets on Swarm:** Swarm mounts secrets as files under `/run/secrets/` and can't
+turn them into environment variables, so use the `_FILE` form there, for example
+`HBA_S3_SECRET_KEY_FILE=/run/secrets/minio_secret_key`. Setting both the value and
+the `_FILE` variable is an error. On Kubernetes either form works.
+
+An invalid configuration makes the worker print one `Invalid worker configuration: …`
+line to stderr and exit with code 1.
 
 For local on-prem development, set the MinIO endpoint and credentials, bucket,
 and either set `HBA_TIER=onprem` or provide `HBA_NODE_NAME`. For AWS, set
