@@ -1,6 +1,7 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Webp;
+using SixLabors.ImageSharp.Metadata.Profiles.Exif;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
@@ -26,16 +27,15 @@ public sealed class ImagePipelineTests
 
         var result = pipeline.Process(input, preset);
 
-        var format = Image.DetectFormat(result);
+        var format = Image.DetectFormat(result.Data);
         Assert.NotNull(format);
         Assert.Equal(expectedFormat, format.Name, ignoreCase: true);
 
         // Extension and content type are stored next to the encoder, so check they agree with it
-        var definition = ImagePresets.Get(preset);
-        Assert.Contains(definition.OutputExtension, format.FileExtensions);
-        Assert.Equal(definition.ContentType, format.DefaultMimeType);
+        Assert.Contains(result.Extension, format.FileExtensions);
+        Assert.Equal(result.ContentType, format.DefaultMimeType);
 
-        using var output = Image.Load<Rgb24>(result);
+        using var output = Image.Load<Rgb24>(result.Data);
         Assert.Equal(expectedWidth, output.Width);
         Assert.Equal(expectedHeight, output.Height);
     }
@@ -52,7 +52,35 @@ public sealed class ImagePipelineTests
         var first = pipeline.Process(input, preset);
         var second = pipeline.Process(input, preset);
 
-        Assert.Equal(first, second);
+        Assert.Equal(first.Data, second.Data);
+    }
+
+    [Fact]
+    public void Process_RejectsNonImageInputWithAPermanentFailureType()
+    {
+        // The worker treats exactly these types as "bad input, don't retry" (JobLoop).
+        // If an ImageSharp update changes what it throws, this test fails instead of jobs retrying.
+        var pipeline = new ImagePipeline();
+        var garbage = new byte[4096];
+        new Random(42).NextBytes(garbage);
+
+        var exception = Assert.ThrowsAny<Exception>(() => pipeline.Process(garbage, "small"));
+
+        Assert.True(
+            exception is UnknownImageFormatException or InvalidImageContentException,
+            $"Unexpected exception type {exception.GetType().Name}.");
+    }
+
+    [Fact]
+    public void Process_DropsSourceMetadata()
+    {
+        var pipeline = new ImagePipeline();
+        var input = CreateJpegWithExif(640, 480);
+
+        var result = pipeline.Process(input, "small");
+
+        using var output = Image.Load<Rgb24>(result.Data);
+        Assert.Null(output.Metadata.ExifProfile);
     }
 
     [Fact]
@@ -118,6 +146,16 @@ public sealed class ImagePipelineTests
     private static byte[] CreateJpeg(int width, int height)
     {
         using var image = new Image<Rgb24>(width, height, new Rgb24(80, 140, 200));
+        using var output = new MemoryStream();
+        image.SaveAsJpeg(output);
+        return output.ToArray();
+    }
+
+    private static byte[] CreateJpegWithExif(int width, int height)
+    {
+        using var image = new Image<Rgb24>(width, height, new Rgb24(80, 140, 200));
+        image.Metadata.ExifProfile = new ExifProfile();
+        image.Metadata.ExifProfile.SetValue(ExifTag.Make, "Test Camera");
         using var output = new MemoryStream();
         image.SaveAsJpeg(output);
         return output.ToArray();
