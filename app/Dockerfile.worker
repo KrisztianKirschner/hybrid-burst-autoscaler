@@ -1,5 +1,5 @@
 # Build stage: dotnet SDK, compiles and publishes
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM dhi.io/dotnet:10-sdk AS build
 WORKDIR /src
 
 # Copy csproj and restore as distinct layers
@@ -13,7 +13,7 @@ COPY src/ src/
 RUN dotnet publish src/Hba.Worker/Hba.Worker.csproj -c Release -o /out --no-restore
 
 # Final runtime stage (rootless)
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+FROM dhi.io/aspnetcore:10 AS final
 WORKDIR /app
 COPY --from=build /out ./
 USER $APP_UID
