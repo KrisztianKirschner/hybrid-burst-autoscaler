@@ -10,7 +10,7 @@ namespace Hba.Processing;
 /// and returns the encoded image bytes. It limits ImageSharp processing to one thread and disposes
 /// its image and streams after processing.
 /// </summary>
-public sealed class ImagePipeline
+public sealed class ImagePipeline : IImagePipeline
 {
     private readonly Configuration _configuration;
 
@@ -23,7 +23,7 @@ public sealed class ImagePipeline
     // One replica = one vCPU; exposed so a test guards it
     internal int MaxDegreeOfParallelism => _configuration.MaxDegreeOfParallelism;
 
-    public byte[] Process(ReadOnlySpan<byte> source, string presetName)
+    public ProcessedImage Process(ReadOnlySpan<byte> source, string presetName)
     {
         if (source.IsEmpty)
         {
@@ -31,8 +31,12 @@ public sealed class ImagePipeline
         }
 
         var preset = ImagePresets.Get(presetName);
+
+        // SkipMetadata: EXIF (incl. GPS), ICC and thumbnails would otherwise be copied into every output.
+        // TargetSize is left unset on purpose: decoder-side downscaling would make every job cheaper
+        // and invalidate the calibration (§10.2). Every job does the full decode.
         using var image = Image.Load<Rgb24>(
-            new DecoderOptions { Configuration = _configuration },
+            new DecoderOptions { Configuration = _configuration, SkipMetadata = true },
             source);
 
         image.Mutate(context =>
@@ -52,6 +56,6 @@ public sealed class ImagePipeline
 
         using var output = new MemoryStream();
         image.Save(output, preset.Encoder);
-        return output.ToArray();
+        return new ProcessedImage(output.ToArray(), preset.OutputExtension, preset.ContentType);
     }
 }
