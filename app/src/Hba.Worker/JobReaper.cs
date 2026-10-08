@@ -41,9 +41,14 @@ public sealed class JobReaper(
             {
                 await ReapStaleJobsAsync(redis.GetDatabase(), stoppingToken);
             }
-            catch (RedisException exception)
+            catch (Exception exception) when (RedisErrors.IsRedisFailure(exception))
             {
                 logger.LogError(exception, "Redis job reaper pass failed.");
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // A reaper bug must not stop the worker; the next pass tries again.
+                logger.LogCritical(exception, "Unhandled error in job reaper pass.");
             }
         }
     }

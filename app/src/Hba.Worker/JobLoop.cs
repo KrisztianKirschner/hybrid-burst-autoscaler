@@ -57,7 +57,7 @@ public sealed class JobLoop(
                     ListSide.Right,
                     ListSide.Left);
             }
-            catch (RedisException exception)
+            catch (Exception exception) when (RedisErrors.IsRedisFailure(exception))
             {
                 logger.LogError(exception, "Failed to fetch a job from Redis.");
                 await DelayAsync(pollDelay, stoppingToken);
@@ -73,7 +73,16 @@ public sealed class JobLoop(
             }
 
             pollDelay = InitialPollDelay;
-            await ProcessOneAsync(database, raw);
+            try
+            {
+                await ProcessOneAsync(database, raw);
+            }
+            catch (Exception exception)
+            {
+                // Last resort: one job must never stop the worker (§10.4). If the message is still in
+                // the processing list, the reaper returns it to the queue once its heartbeat is stale.
+                logger.LogCritical(exception, "Unhandled error while handling a job; continuing with the next one.");
+            }
         }
     }
 
@@ -93,7 +102,7 @@ public sealed class JobLoop(
             {
                 await RemoveFromProcessingAsync(database, raw);
             }
-            catch (RedisException removalException)
+            catch (Exception removalException) when (RedisErrors.IsRedisFailure(removalException))
             {
                 logger.LogError(removalException, "Could not remove invalid job message.");
             }
@@ -104,9 +113,6 @@ public sealed class JobLoop(
         // An unchecked preset string must never become a label value (cardinality rule, §8.1).
         var presetLabel = PresetNames.IsKnown(message.Preset) ? message.Preset : "unknown";
         using var inProgress = metrics.TrackInProgress(options.Tier);
-        using var jobDuration = metrics.TrackJobDuration(options.Tier, presetLabel);
-        var queueWait = Math.Max(0, (DateTimeOffset.UtcNow - message.SubmittedAt).TotalSeconds);
-        metrics.ObserveQueueWait(options.Tier, queueWait);
 
         var heartbeatCancellation = new CancellationTokenSource();
         var heartbeat = RunHeartbeatAsync(database, message.JobId, heartbeatCancellation.Token);
@@ -114,6 +120,7 @@ public sealed class JobLoop(
         var processSeconds = 0d;
         var uploadSeconds = 0d;
         var startedAt = DateTimeOffset.UtcNow;
+        var jobTimer = System.Diagnostics.Stopwatch.StartNew();
         var attempt = 0;
 
         try
@@ -136,6 +143,12 @@ public sealed class JobLoop(
             }
 
             attempt = await MarkProcessingAsync(database, message, startedAt);
+            if (attempt == 1)
+            {
+                // Only the first attempt: a retry's wait would also include the earlier attempt.
+                ObserveQueueWait(message, startedAt);
+            }
+
             var input = await MeasureStageAsync(
                 options.Tier,
                 "download",
@@ -191,6 +204,9 @@ public sealed class JobLoop(
                 outputKey,
                 options.Tier == WorkerOptions.TierAws ? OutputStores.S3 : OutputStores.Minio,
                 error: null);
+            // Only successful jobs: the metric has no status label, so failed or retried attempts
+            // would skew the per-tier duration comparison.
+            metrics.ObserveJobDuration(options.Tier, presetLabel, jobTimer.Elapsed.TotalSeconds);
             metrics.Completed(options.Tier, presetLabel, JobStatus.Done);
             LogJobSummary(
                 message,
@@ -406,7 +422,7 @@ public sealed class JobLoop(
                         JobHash.HeartbeatAt,
                         JobHash.FormatTimestamp(DateTimeOffset.UtcNow));
                 }
-                catch (RedisException exception)
+                catch (Exception exception) when (RedisErrors.IsRedisFailure(exception))
                 {
                     logger.LogError(exception, "Heartbeat update failed for job {JobId}.", jobId);
                 }
@@ -415,6 +431,22 @@ public sealed class JobLoop(
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
+    }
+
+    private void ObserveQueueWait(JobMessage message, DateTimeOffset startedAt)
+    {
+        var seconds = (startedAt - message.SubmittedAt).TotalSeconds;
+        if (seconds < 0)
+        {
+            // The API's and this node's clocks disagree; the wait would otherwise be clamped silently.
+            logger.LogWarning(
+                "Negative queue wait of {Seconds:F3} s for job {JobId}: clock skew between the API host and node {Node}.",
+                seconds,
+                message.JobId,
+                options.NodeName);
+        }
+
+        metrics.ObserveQueueWait(options.Tier, Math.Max(0, seconds));
     }
 
     private async Task RemoveFromProcessingAsync(IDatabase database, RedisValue raw)
@@ -469,7 +501,7 @@ public sealed class JobLoop(
     {
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
-            if (current is RedisException or HttpRequestException or IOException or TaskCanceledException)
+            if (current is RedisException or TimeoutException or HttpRequestException or IOException or TaskCanceledException)
             {
                 return true;
             }

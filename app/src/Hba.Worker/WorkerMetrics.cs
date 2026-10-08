@@ -1,3 +1,4 @@
+using Hba.Contracts;
 using Prometheus;
 using System.Runtime.InteropServices;
 
@@ -29,7 +30,7 @@ public sealed class WorkerMetrics
 
     private readonly Histogram _jobDuration = Metrics.CreateHistogram(
         "hba_job_duration_seconds",
-        "Time spent processing a job, from start through finish.",
+        "Time spent on a successful job, from start through finish. Failed and retried attempts are not observed.",
         new HistogramConfiguration
         {
             LabelNames = ["tier", "preset"],
@@ -92,8 +93,8 @@ public sealed class WorkerMetrics
     public IDisposable TrackInProgress(string tier) =>
         _inProgress.WithLabels(tier).TrackInProgress();
 
-    public IDisposable TrackJobDuration(string tier, string preset) =>
-        _jobDuration.WithLabels(tier, NormalizePreset(preset)).NewTimer();
+    public void ObserveJobDuration(string tier, string preset, double seconds) =>
+        _jobDuration.WithLabels(tier, NormalizePreset(preset)).Observe(seconds);
 
     public void ObserveQueueWait(string tier, double seconds) =>
         _queueWait.WithLabels(tier).Observe(seconds);
@@ -105,5 +106,5 @@ public sealed class WorkerMetrics
         _completed.WithLabels(tier, NormalizePreset(preset), status).Inc();
 
     private static string NormalizePreset(string preset) =>
-        preset is "small" or "medium" or "large" ? preset : "unknown";
+        PresetNames.IsKnown(preset) ? preset : "unknown";
 }
