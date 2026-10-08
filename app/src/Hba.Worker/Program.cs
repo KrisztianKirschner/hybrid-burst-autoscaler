@@ -35,7 +35,7 @@ public static class Program
             return ConnectionMultiplexer.Connect(redisOptions);
         });
         builder.Services.AddSingleton<IJobStorage, S3JobStorage>();
-        builder.Services.AddSingleton<ImagePipeline>();
+        builder.Services.AddSingleton<IImagePipeline, ImagePipeline>();
         builder.Services.AddSingleton<WorkerMetrics>();
         builder.Services.AddSingleton<WarmupGate>();
         builder.Services.AddHostedService<JobLoop>();
