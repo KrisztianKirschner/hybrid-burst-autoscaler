@@ -22,6 +22,27 @@
     group: root
     mode: '0644'
 
+- name: Check that the stack secrets are set
+  ansible.builtin.assert:
+    that: item.data | length > 0
+    fail_msg: "{{ item.name }} is empty: RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY not set in the environment"
+    quiet: true
+  loop: "{{ stacks_secrets }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# https://docs.ansible.com/projects/ansible/latest/collections/community/docker/docker_secret_module.html
+# Swarm secrets are immutable: new data means remove + recreate, which fails while a service uses it
+- name: Create Swarm secrets
+  community.docker.docker_secret:
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    state: present
+  loop: "{{ stacks_secrets }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
 - name: Deploy stack
   community.docker.docker_stack:
     name: "{{ stacks_name }}"
