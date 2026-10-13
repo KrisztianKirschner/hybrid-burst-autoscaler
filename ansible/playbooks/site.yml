@@ -60,3 +60,12 @@
   roles:
     - observability
   tags: observability
+
+# Outside both clusters, so Swarm and K8s runs share the same store (docs/app.md)
+- name: Deploy object storage
+  hosts: observability
+  become: true
+  gather_facts: false
+  roles:
+    - rustfs
+  tags: rustfs
