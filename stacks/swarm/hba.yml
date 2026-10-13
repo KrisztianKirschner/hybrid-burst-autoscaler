@@ -25,10 +25,23 @@ services:
     secrets:
       - rustfs_access_key
       - rustfs_secret_key
+    # Longer than one job + HBA_SHUTDOWN_TIMEOUT_SECONDS (25 s); Swarm's default 10 s kills jobs mid-way
+    stop_grace_period: 30s
+    # The image's HEALTHCHECK runs inside the 1-CPU limit every 30 s; K8s ignores it (no
+    # livenessProbe there either), so it stays off here to keep both orchestrators equal
+    healthcheck:
+      disable: true
     deploy:
       replicas: 1
       placement:
         constraints: ["node.role == worker"]
+      # 1 replica = 1 vCPU (single-threaded worker). The reservation makes Swarm leave
+      # tasks Pending when the nodes are full instead of oversubscribing them
+      resources:
+        limits:
+          cpus: "1"
+        reservations:
+          cpus: "1"
 
   redis:
     image: redis:8.8.3-alpine
