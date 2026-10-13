@@ -1,0 +1,21 @@
+# https://docs.rustfs.com/en/developer/integration/storage/zerofs
+rustfs_dest_dir: /opt/rustfs
+
+rustfs_image: "rustfs/rustfs:1.0.1"   # same version as app/docker-compose.dev.yml
+rustfs_aws_cli_image: "amazon/aws-cli:2.37.11"
+
+rustfs_port: 9000
+# Web console, published like Grafana (lab is VPN-only). It logs in with the root keys,
+# which the S3 API on rustfs_port accepts anyway. 127.0.0.1 = reachable only via ssh -L
+rustfs_console_bind: 0.0.0.0
+rustfs_console_port: 9001
+
+# The image runs as this UID/GID; the data directory must belong to it
+rustfs_uid: 10001
+
+# Shared with the burst tier (HBA_S3_BUCKET is one name for both stores), and
+# S3 bucket names are global, hence not just "hba"
+rustfs_bucket: hybrid-burst-data
+
+rustfs_access_key: "{{ lookup('env', 'RUSTFS_ACCESS_KEY') }}"
+rustfs_secret_key: "{{ lookup('env', 'RUSTFS_SECRET_KEY') }}"

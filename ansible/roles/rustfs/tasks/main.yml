@@ -1,0 +1,89 @@
+# https://docs.ansible.com/projects/ansible/latest/collections/community/docker/docker_compose_v2_module.html
+- name: Check that the RustFS credentials are set
+  ansible.builtin.assert:
+    that:
+      - rustfs_access_key | length > 0
+      - rustfs_secret_key | length > 0
+    fail_msg: RUSTFS_ACCESS_KEY or RUSTFS_SECRET_KEY is not set in the environment
+    quiet: true
+
+- name: Create directories
+  ansible.builtin.file:
+    path: "{{ rustfs_dest_dir }}/{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.owner | default('root') }}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop:
+    - { path: data, owner: "{{ rustfs_uid }}", mode: "0750" }
+    - { path: secrets, mode: "0700" }
+
+# Read by Compose on the host (as root), not mounted into the container
+- name: Write RustFS credentials
+  ansible.builtin.copy:
+    content: |
+      RUSTFS_ACCESS_KEY={{ rustfs_access_key }}
+      RUSTFS_SECRET_KEY={{ rustfs_secret_key }}
+    dest: "{{ rustfs_dest_dir }}/secrets/rustfs.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  diff: false
+
+- name: Render compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ rustfs_dest_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+# Fresh VM + dry run: nothing above was written, so there is no project to start
+- name: Check whether the compose file is deployed
+  ansible.builtin.stat:
+    path: "{{ rustfs_dest_dir }}/compose.yml"
+  register: rustfs_compose_file
+
+# wait: the bucket task below needs the S3 API, so block until the healthcheck passes
+- name: Start RustFS
+  community.docker.docker_compose_v2:
+    project_src: "{{ rustfs_dest_dir }}"
+    state: present
+    wait: true
+    wait_timeout: 120
+  when: not ansible_check_mode or rustfs_compose_file.stat.exists
+
+# Credentials reach the container by name (-e VAR), so they are not in the logged argv
+# https://docs.rustfs.com/en/administration/data/bucket/creation
+- name: Create the bucket
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network=host
+      - -e
+      - AWS_ACCESS_KEY_ID
+      - -e
+      - AWS_SECRET_ACCESS_KEY
+      - -e
+      - AWS_DEFAULT_REGION=us-east-1
+      - -e
+      - AWS_ENDPOINT_URL=http://127.0.0.1:{{ rustfs_port }}
+      # Same as the dev seed: not every S3-compatible store accepts the CLI's default checksums
+      - -e
+      - AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+      - --entrypoint=/bin/sh
+      - "{{ rustfs_aws_cli_image }}"
+      - -ec
+      - >-
+        aws configure set default.s3.addressing_style path;
+        aws s3api head-bucket --bucket {{ rustfs_bucket }} 2>/dev/null
+        || aws s3 mb s3://{{ rustfs_bucket }}
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ rustfs_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ rustfs_secret_key }}"
+  register: rustfs_bucket_result
+  changed_when: "'make_bucket' in rustfs_bucket_result.stdout"
+  when: not ansible_check_mode

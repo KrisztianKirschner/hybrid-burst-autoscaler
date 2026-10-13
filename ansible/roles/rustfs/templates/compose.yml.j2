@@ -1,0 +1,28 @@
+name: rustfs
+
+services:
+  rustfs:
+    # https://docs.rustfs.com/
+    image: "{{ rustfs_image }}"
+    restart: unless-stopped
+    # https://docs.rustfs.com/en/operations/credentials
+    # RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY; a changed file recreates the container
+    env_file:
+      - ./secrets/rustfs.env
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "{{ rustfs_port }}:9000"
+      - "{{ rustfs_console_bind }}:{{ rustfs_console_port }}:9001"
+    # Bind mount instead of a named volume: Ansible creates it with the right owner
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
