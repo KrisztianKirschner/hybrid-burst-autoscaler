@@ -10,6 +10,26 @@ services:
       placement:
         constraints: ["node.role == manager"]
 
+  worker:
+    image: ghcr.io/krisztiankirschner/hba-worker:sha-6a0d8f9
+    networks:
+      - hba
+    environment:
+      HBA_S3_BUCKET: hybrid-burst-data
+      # Swarm template, filled per task: burst-* nodes switch the worker to S3 (HBA_TIER=auto)
+      HBA_NODE_NAME: "{{.Node.Hostname}}"
+      HBA_S3_ENDPOINT_ONPREM: http://10.0.20.30:9000   # RustFS on obs-01
+      # Swarm secrets are files only, hence the _FILE form
+      HBA_S3_ACCESS_KEY_FILE: /run/secrets/rustfs_access_key
+      HBA_S3_SECRET_KEY_FILE: /run/secrets/rustfs_secret_key
+    secrets:
+      - rustfs_access_key
+      - rustfs_secret_key
+    deploy:
+      replicas: 1
+      placement:
+        constraints: ["node.role == manager"]
+
   redis:
     image: redis:8.8.3-alpine
     networks:
