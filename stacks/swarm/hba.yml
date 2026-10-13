@@ -1,6 +1,6 @@
 services:
   api:
-    image: ghcr.io/krisztiankirschner/hba-api:sha-22b2334
+    image: ghcr.io/krisztiankirschner/hba-api:sha-6a0d8f9
     ports:
       - "8080:8080"
     networks:
