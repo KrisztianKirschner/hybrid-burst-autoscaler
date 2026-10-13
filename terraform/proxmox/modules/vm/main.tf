@@ -29,6 +29,9 @@ resource "proxmox_virtual_environment_vm" "vm" {
   }
 
   initialization {
+    dns {
+      servers = [var.gateway]
+    }
     ip_config {
       ipv4 {
         address = var.ip_address
