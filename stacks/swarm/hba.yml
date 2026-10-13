@@ -22,3 +22,10 @@ services:
 networks:
   hba:
     driver: overlay
+
+# Created by the stacks Ansible role from RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY
+secrets:
+  rustfs_access_key:
+    external: true
+  rustfs_secret_key:
+    external: true
