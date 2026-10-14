@@ -2,9 +2,6 @@ stacks_dest_dir: /opt/stacks
 # Trailing slash: copy the folder's contents, not the folder itself
 stacks_src_dir: "{{ playbook_dir }}/../../stacks/swarm/"
 
-# Same keys as the rustfs role; the worker reads them as Swarm secrets
-stacks_secrets:
-  - name: rustfs_access_key
-    data: "{{ lookup('env', 'RUSTFS_ACCESS_KEY') }}"
-  - name: rustfs_secret_key
-    data: "{{ lookup('env', 'RUSTFS_SECRET_KEY') }}"
+stacks_deploy:
+  - hba
+  - monitoring
