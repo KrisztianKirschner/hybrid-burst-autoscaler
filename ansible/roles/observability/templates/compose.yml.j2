@@ -12,7 +12,7 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time={{ observability_retention_time }}
       - --storage.tsdb.retention.size={{ observability_retention_size }}
-      - --web.enable-remote-write-receiver=true
+      - --web.enable-remote-write-receiver
     ports:
       - "{{ observability_prometheus_port }}:9090"
     volumes:
