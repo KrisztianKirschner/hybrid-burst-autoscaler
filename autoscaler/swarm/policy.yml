@@ -1,0 +1,10 @@
+service: hba_worker
+prometheus_url: http://10.0.20.30:9090
+query: 'redis_key_size{key="hba:jobs"}'
+jobs_per_replica: 5        # tune after preset calibration
+min_replicas: 1
+max_replicas: 4            # 2 worker nodes × 2; bursting raises this later
+# Times in seconds (plain numbers, no "s")
+poll_interval: 5
+scale_up_cooldown: 15
+scale_down_cooldown: 60
