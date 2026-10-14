@@ -23,6 +23,7 @@ scrape_configs:
       - host: unix:///var/run/docker.sock
         role: tasks
         port: 8080   # worker /metrics
+        refresh_interval: 5s
     relabel_configs:
       - source_labels: [__meta_dockerswarm_service_name]
         regex: hba_worker
