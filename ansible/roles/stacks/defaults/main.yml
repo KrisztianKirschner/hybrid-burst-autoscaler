@@ -1,6 +1,6 @@
 stacks_dest_dir: /opt/stacks
-stacks_name: hba
-stacks_src: "{{ playbook_dir }}/../../stacks/swarm/hba.yml"
+# Trailing slash: copy the folder's contents, not the folder itself
+stacks_src_dir: "{{ playbook_dir }}/../../stacks/swarm/"
 
 # Same keys as the rustfs role; the worker reads them as Swarm secrets
 stacks_secrets:
@@ -8,3 +8,8 @@ stacks_secrets:
     data: "{{ lookup('env', 'RUSTFS_ACCESS_KEY') }}"
   - name: rustfs_secret_key
     data: "{{ lookup('env', 'RUSTFS_SECRET_KEY') }}"
+
+# Deployed in this order: monitoring joins the overlay network the hba stack creates
+stacks_deploy:
+  - hba
+  - monitoring

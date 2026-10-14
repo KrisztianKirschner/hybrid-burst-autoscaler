@@ -14,10 +14,10 @@
     owner: root
     group: root
 
-- name: Copy stack file
+- name: Copy stack files
   ansible.builtin.copy:
-    src: "{{ stacks_src }}"
-    dest: "{{ stacks_dest_dir }}/{{ stacks_name }}.yml"
+    src: "{{ stacks_src_dir }}"
+    dest: "{{ stacks_dest_dir }}/"
     owner: root
     group: root
     mode: '0644'
@@ -43,10 +43,14 @@
     label: "{{ item.name }}"
   no_log: true
 
-- name: Deploy stack
+- name: Deploy stacks
   community.docker.docker_stack:
-    name: "{{ stacks_name }}"
+    name: "{{ item }}"
     state: present
     prune: true
     compose:
-      - "{{ stacks_dest_dir }}/{{ stacks_name }}.yml"
+      - "{{ stacks_dest_dir }}/{{ item }}.yml"
+  loop: "{{ stacks_deploy }}"
+  # Swarm configs are immutable: a content hash in the name makes every change a new config
+  environment:
+    PROMETHEUS_AGENT_CONFIG_VERSION: "{{ (lookup('ansible.builtin.file', stacks_src_dir ~ 'prometheus-agent.yml') | hash('sha1'))[:12] }}"

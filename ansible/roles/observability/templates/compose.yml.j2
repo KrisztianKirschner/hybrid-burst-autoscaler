@@ -4,6 +4,7 @@ services:
   prometheus:
     # https://prometheus.io/docs/prometheus/latest/installation/
     # https://prometheus.io/docs/prometheus/latest/storage/
+    # https://prometheus.io/docs/prometheus/latest/command-line/prometheus/
     image: "{{ observability_prometheus_image }}"
     restart: unless-stopped
     command:
@@ -11,6 +12,7 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time={{ observability_retention_time }}
       - --storage.tsdb.retention.size={{ observability_retention_size }}
+      - --web.enable-remote-write-receiver=true
     ports:
       - "{{ observability_prometheus_port }}:9090"
     volumes:
