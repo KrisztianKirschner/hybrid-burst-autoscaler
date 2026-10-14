@@ -25,10 +25,12 @@
     owner: root
     group: root
     mode: "0644"
+  register: common_apt_pin
 
 - name: Upgrade system to the snapshot
   ansible.builtin.apt:
     update_cache: true
+    cache_valid_time: "{{ 0 if common_apt_pin is changed else 86400 }}"
     upgrade: dist
 
 - name: Install base packages
