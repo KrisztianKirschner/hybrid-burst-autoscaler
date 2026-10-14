@@ -17,12 +17,13 @@
         components: stable
         architectures: amd64
         signed_by: https://download.docker.com/linux/ubuntu/gpg
+      register: docker_apt_repo
 
     - name: Install Docker
       ansible.builtin.apt:
         name: "{{ docker_packages }}"
         state: present
-        update_cache: true
+        update_cache: "{{ docker_apt_repo is changed }}"
 
     - name: Hold pinned Docker packages
       ansible.builtin.dpkg_selections:
