@@ -1,0 +1,52 @@
+services:
+  redis-exporter:
+    # https://github.com/oliver006/redis_exporter
+    image: oliver006/redis_exporter:v1.93.0-alpine
+    networks:
+      - hba
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_EXPORTER_CHECK_SINGLE_KEYS: db0=hba:jobs
+    deploy:
+      replicas: 1
+      placement:
+        constraints: ["node.role == manager"]
+
+  prometheus-agent:
+    # https://prometheus.io/docs/prometheus/latest/command-line/prometheus/
+    # Same tag as the server on obs-01
+    image: prom/prometheus:v3.15.0
+    command:
+      - --agent
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.agent.path=/prometheus
+    # dockerswarm_sd reads the Docker API; the image runs as nobody, which can't open the socket
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - prometheus-agent-data:/prometheus
+    configs:
+      - source: prometheus_agent
+        target: /etc/prometheus/prometheus.yml
+    networks:
+      - hba
+    deploy:
+      replicas: 1
+      # Swarm service discovery needs a manager's Docker API
+      placement:
+        constraints: ["node.role == manager"]
+
+# Swarm configs are immutable: a changed file needs a new name, hence the version suffix
+configs:
+  prometheus_agent:
+    name: prometheus_agent_${PROMETHEUS_AGENT_CONFIG_VERSION:-1}
+    file: ./prometheus-agent.yml
+
+# Write-ahead log of samples not yet sent to obs-01
+volumes:
+  prometheus-agent-data:
+
+networks:
+  hba:
+    external: true
+    name: hba_hba
