@@ -22,6 +22,20 @@ locals {
       cluster    = "swarm"
       node_role  = "worker"
     }
+    "swarm-02" = {
+      vmid       = 213,
+      ip_address = "10.0.20.13/24",
+      disk_size  = 30
+      cluster    = "swarm"
+      node_role  = "worker"
+    }
+    "swarm-03" = {
+      vmid       = 214,
+      ip_address = "10.0.20.14/24",
+      disk_size  = 30
+      cluster    = "swarm"
+      node_role  = "worker"
+    }
   }
 }
 
