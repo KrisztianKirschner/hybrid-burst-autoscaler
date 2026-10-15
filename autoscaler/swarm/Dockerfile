@@ -3,7 +3,7 @@
 # Bump deliberately, never between comparison runs.
 
 # Build stage: has pip and a shell
-FROM dhi.io/python:3.14-alpine3.24-dev AS build
+FROM dhi.io/python:3.14-alpine3.24-dev@sha256:df552b9c5634f917614a73c7687a6aebfff432f8ea7a6db754e953e618dc51c1 AS build
 WORKDIR /app
 RUN python -m venv /app/venv
 ENV PATH=/app/venv/bin:$PATH

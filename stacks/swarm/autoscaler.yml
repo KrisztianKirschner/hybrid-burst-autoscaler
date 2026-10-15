@@ -1,0 +1,32 @@
+services:
+  controller:
+    # Built by .github/workflows/autoscaler.yml from autoscaler/swarm/
+    image: ghcr.io/krisztiankirschner/hba-autoscaler:sha-04785ec
+    # Scales hba_worker through the Docker socket, which needs root. Numeric on purpose:
+    # the hardened image has no "root" entry in /etc/passwd ("unable to find user root")
+    user: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    configs:
+      - source: autoscaler_policy
+        target: /etc/hba-autoscaler/policy.yml   # HBA_POLICY_FILE in the image
+    # On the overlay so the Prometheus agent can scrape :8000/metrics
+    networks:
+      - hba
+    deploy:
+      replicas: 1
+      # Only a manager can change a service's replica count
+      placement:
+        constraints: ["node.role == manager"]
+
+# Swarm configs are immutable: a changed file needs a new name, hence the version suffix
+configs:
+  autoscaler_policy:
+    name: autoscaler_policy_${AUTOSCALER_POLICY_VERSION:-1}
+    file: ./autoscaler-policy.yml
+
+# The overlay created by the hba stack; deploy that stack first
+networks:
+  hba:
+    external: true
+    name: hba_hba

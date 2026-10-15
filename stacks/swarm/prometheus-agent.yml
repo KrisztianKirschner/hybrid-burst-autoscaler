@@ -15,6 +15,12 @@ scrape_configs:
     static_configs:
       - targets: ["redis-exporter:9121"]
 
+  # The Swarm autoscaler's own metrics (hba_autoscaler_*): depth it saw, current/desired replicas.
+  # Full service name, because the controller is in the autoscaler stack, not this one.
+  - job_name: autoscaler
+    static_configs:
+      - targets: ["autoscaler_controller:8000"]
+
   # One target per running worker task, on its overlay address
   # https://prometheus.io/docs/guides/dockerswarm/
   # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#dockerswarm_sd_config
