@@ -54,3 +54,4 @@
   # Swarm configs are immutable: a content hash in the name makes every change a new config
   environment:
     PROMETHEUS_AGENT_CONFIG_VERSION: "{{ (lookup('ansible.builtin.file', stacks_src_dir ~ 'prometheus-agent.yml') | hash('sha1'))[:12] }}"
+    AUTOSCALER_POLICY_VERSION: "{{ (lookup('ansible.builtin.file', stacks_src_dir ~ 'autoscaler-policy.yml') | hash('sha1'))[:12] }}"
