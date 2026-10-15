@@ -9,7 +9,8 @@ stacks_secrets:
   - name: rustfs_secret_key
     data: "{{ lookup('env', 'RUSTFS_SECRET_KEY') }}"
 
-# Deployed in this order: monitoring joins the overlay network the hba stack creates
+# Deployed in this order: monitoring and autoscaler join the overlay network the hba stack creates
 stacks_deploy:
   - hba
   - monitoring
+  - autoscaler
