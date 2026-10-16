@@ -14,7 +14,7 @@ public sealed class ImagePipelineTests
 
     [Theory]
     [InlineData("small", 640, 480, "Jpeg")]
-    [InlineData("medium", 2048, 1536, "Webp")]
+    [InlineData("medium", 3600, 2700, "Webp")]
     [InlineData("large", 3840, 2880, "Webp")]
     public void Process_ResizesAndEncodesUsingPreset(
         string preset,
@@ -159,7 +159,7 @@ public sealed class ImagePipelineTests
             preset =>
             {
                 Assert.Equal("medium", preset.Name);
-                Assert.Equal(2048, preset.MaxEdge);
+                Assert.Equal(3600, preset.MaxEdge);
                 Assert.Equal(KnownResamplers.Lanczos3, preset.Resampler);
                 Assert.Null(preset.SharpenSigma);
                 Assert.Equal(80, Assert.IsType<WebpEncoder>(preset.Encoder).Quality);
