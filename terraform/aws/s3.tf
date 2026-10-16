@@ -38,3 +38,12 @@ resource "aws_s3_bucket_lifecycle_configuration" "workload" {
     }
   }
 }
+
+resource "aws_s3_bucket_public_access_block" "workload" {
+  bucket = aws_s3_bucket.workload.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
