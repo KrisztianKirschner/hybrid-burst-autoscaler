@@ -22,7 +22,7 @@ jobs:
     strategy: # One root per provider
       fail-fast: false
       matrix:
-        root: [proxmox]
+        root: [proxmox, aws]
     defaults:
       run:
         working-directory: terraform/${{ matrix.root }}
@@ -46,8 +46,12 @@ jobs:
       - name: Terraform validate
         run: terraform validate
 
-      - name: Tflint Install 
+      - name: Tflint Install
         uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+
+      - name: Tflint init
+        working-directory: .
+        run: tflint --init --chdir=terraform/${{ matrix.root }}
 
       - name: Tflint scan
         id: tflint
