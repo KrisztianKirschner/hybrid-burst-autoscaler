@@ -17,6 +17,11 @@ resource "aws_iam_role" "burst_node" {
   assume_role_policy = data.aws_iam_policy_document.burst_assume.json
 }
 
+resource "aws_iam_instance_profile" "burst_node" {
+  name = "hba-burst-node"
+  role = aws_iam_role.burst_node.name
+}
+
 # Scoped on purpose: AWS-managed S3 policies would also reach the tfstate bucket
 data "aws_iam_policy_document" "burst_node" {
   statement {
