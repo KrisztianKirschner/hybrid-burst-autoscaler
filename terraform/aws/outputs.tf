@@ -17,3 +17,7 @@ output "workload_bucket_name" {
 output "workload_bucket_arn" {
   value = aws_s3_bucket.workload.arn
 }
+
+output "burst_instance_profile_name" {
+  value = aws_iam_instance_profile.burst_node.name
+}
