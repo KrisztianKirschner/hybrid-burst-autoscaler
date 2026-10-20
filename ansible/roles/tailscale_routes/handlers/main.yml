@@ -1,0 +1,4 @@
+# Only notified when the file changed, so it really changes the system
+- name: Apply netplan
+  ansible.builtin.command: netplan apply
+  changed_when: true
