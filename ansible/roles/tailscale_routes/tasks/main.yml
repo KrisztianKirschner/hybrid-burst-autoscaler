@@ -1,0 +1,18 @@
+# A missing router address would render "via: " and netplan apply would fail on every node
+- name: Check that the router address is set
+  ansible.builtin.assert:
+    that: tailscale_routes_via | length > 0
+    fail_msg: "ts_gateway_ip is not set (inventory/group_vars/all.yml)"
+    quiet: true
+
+# No validate: netplan cannot check a single file. netplan apply checks the whole
+# configuration first and refuses an invalid one, so a bad file fails the handler instead.
+# Mode 0600: netplan warns about files that other users can read.
+- name: Render return routes
+  ansible.builtin.template:
+    src: 60-tailscale-routes.yaml.j2
+    dest: /etc/netplan/60-tailscale-routes.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Apply netplan
