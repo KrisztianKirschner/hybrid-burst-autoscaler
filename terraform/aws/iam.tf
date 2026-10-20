@@ -22,6 +22,21 @@ resource "aws_iam_instance_profile" "burst_node" {
   role = aws_iam_role.burst_node.name
 }
 
+# https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-create-iam-instance-profile.html
+data "aws_iam_policy_document" "session_manager" {
+  statement {
+    sid = "SessionManager"
+    actions = [
+      "ssm:UpdateInstanceInformation",    # register
+      "ssmmessages:CreateControlChannel", # control channel
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:CreateDataChannel", # data channel for agent
+      "ssmmessages:OpenDataChannel"
+    ]
+    resources = ["*"]
+  }
+}
+
 # Scoped on purpose: AWS-managed S3 policies would also reach the tfstate bucket
 data "aws_iam_policy_document" "burst_node" {
   statement {
