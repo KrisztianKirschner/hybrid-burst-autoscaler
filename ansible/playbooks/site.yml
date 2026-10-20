@@ -6,6 +6,17 @@
     - common
   tags: common
 
+# Right after common: CI reaches the cluster nodes through ts-gateway, so these routes
+# must be in place before anything else depends on that path (docs/network.md §2.2)
+- name: Configure return routes through ts-gateway
+  hosts: cluster_nodes
+  become: true
+  gather_facts: true   # tailscale_routes_interface comes from ansible_default_ipv4
+  serial: 1            # a bad netplan file can cut off only one node at a time
+  roles:
+    - tailscale_routes
+  tags: routes
+
 - name: Configure Docker
   hosts: docker
   become: true
