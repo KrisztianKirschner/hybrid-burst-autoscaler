@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# Return routes through ts-gateway Merged with the cloud-init file;
+# the default route stays there.
+network:
+  version: 2
+  ethernets:
+    {{ tailscale_routes_interface }}:
+      routes:
+{% for destination in tailscale_routes_destinations %}
+        - to: {{ destination }}
+          via: {{ tailscale_routes_via }}
+{% endfor %}
