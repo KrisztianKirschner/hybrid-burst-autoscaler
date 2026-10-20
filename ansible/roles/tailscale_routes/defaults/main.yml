@@ -1,0 +1,12 @@
+# https://netplan.readthedocs.io/en/stable/netplan-yaml/#routing
+#
+# ts-gateway forwards without SNAT, so traffic it delivers keeps its real source address.
+# Replies to those sources must go back through ts-gateway, not to the default gateway
+# (OPNsense), or the connection hangs.
+
+tailscale_routes_via: "{{ ts_gateway_ip }}"
+tailscale_routes_interface: "{{ ansible_default_ipv4.interface }}"   # needs gather_facts: true
+
+tailscale_routes_destinations:
+  - 10.100.0.0/16   # AWS VPC: burst nodes, through the AWS gateway
+  - 100.64.0.0/10   # tailnet devices: the advertised block sends them via ts-gateway too
