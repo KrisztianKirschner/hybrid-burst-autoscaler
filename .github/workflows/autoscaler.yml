@@ -16,6 +16,7 @@ concurrency:
 jobs:
   # Same flow as the app images (app.yml): PRs build only, main builds and pushes a sha-<commit> tag
   image:
+    if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     env:
       IMAGE: ghcr.io/krisztiankirschner/hba-autoscaler
