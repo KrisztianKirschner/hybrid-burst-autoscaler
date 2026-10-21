@@ -43,6 +43,12 @@ resource "aws_route_table" "burst" {
     gateway_id = aws_internet_gateway.burst.id
   }
 
+  # The lab (Swarm nodes, VIP, obs-01) through the Tailscale gateway
+  route {
+    cidr_block           = "10.0.20.0/24"
+    network_interface_id = aws_instance.gateway.primary_network_interface_id
+  }
+
   tags = {
     Name = "hba-burst"
   }
