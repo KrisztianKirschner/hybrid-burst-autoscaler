@@ -79,6 +79,12 @@ resource "aws_vpc_security_group_ingress_rule" "burst_icmp_frag_needed" {
   to_port           = 4 # Fragmentation Needed
 }
 
+resource "aws_vpc_security_group_egress_rule" "gateway_all" {
+  security_group_id = aws_security_group.gateway.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
 # --- IAM, Session Manager ---
 
 resource "aws_iam_role" "gateway" {
