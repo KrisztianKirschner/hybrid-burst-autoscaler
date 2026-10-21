@@ -68,6 +68,19 @@ resource "aws_vpc_security_group_ingress_rule" "burst_from_lab" {
   to_port           = each.value.port
 }
 
+# Burst to burst traffic
+resource "aws_vpc_security_group_ingress_rule" "burst_from_burst" {
+  for_each = local.swarm_ports
+
+  security_group_id            = aws_security_group.burst.id
+  description                  = "Swarm ${each.key} between burst nodes"
+  referenced_security_group_id = aws_security_group.burst.id
+  ip_protocol                  = each.value.protocol
+  from_port                    = each.value.port
+  to_port                      = each.value.port
+}
+
+
 # Path MTU Discovery: the gateway reports "fragmentation needed" (Tailscale 1280 vs VPC 9001).
 # For ICMP, from_port is the type and to_port the code.
 resource "aws_vpc_security_group_ingress_rule" "burst_icmp_frag_needed" {
