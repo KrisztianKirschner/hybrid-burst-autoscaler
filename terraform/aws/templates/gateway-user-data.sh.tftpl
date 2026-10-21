@@ -1,0 +1,37 @@
+#!/bin/bash
+# First boot of the AWS Tailscale gateway (docs/network.md §2.2). Contains no secret:
+# the Tailscale OAuth secret is read from SSM through the instance role.
+set -euo pipefail
+
+echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/99-tailscale.conf
+sysctl -p /etc/sysctl.d/99-tailscale.conf
+
+snap wait system seed.loaded
+snap install aws-cli --classic
+curl -fsSL https://tailscale.com/install.sh | sh
+
+SECRET=$(aws ssm get-parameter --name "${secret_parameter}" --with-decryption \
+  --query Parameter.Value --output text --region "${region}")
+tailscale up --auth-key="$SECRET?ephemeral=false&preauthorized=true" \
+  --advertise-tags=tag:aws-router --advertise-routes="${vpc_cidr}" \
+  --snat-subnet-routes=false --accept-routes --hostname=hba-aws-gateway
+unset SECRET
+
+# TCP through the tunnel must not depend on ICMP coming back: clamp the MSS.
+# A unit instead of iptables-persistent, so Tailscale's own rules are not saved and doubled.
+cat > /etc/systemd/system/hba-mss-clamp.service <<'EOF'
+[Unit]
+Description=TCP MSS clamping for traffic through tailscale0
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for d in -i -o; do iptables -t mangle -C FORWARD $d tailscale0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -t mangle -A FORWARD $d tailscale0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu; done'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now hba-mss-clamp.service

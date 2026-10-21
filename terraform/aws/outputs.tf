@@ -21,3 +21,7 @@ output "workload_bucket_arn" {
 output "burst_instance_profile_name" {
   value = aws_iam_instance_profile.burst_node.name
 }
+
+output "gateway_instance_id" {
+  value = aws_instance.gateway.id
+}
