@@ -1,6 +1,6 @@
 cluster_vip: 10.0.20.100
 active_cluster: swarm
 
-# Lab-side Tailscale subnet router (LXC, SNAT off). The one place this address is written:
+# Lab-side Tailscale subnet router (VM, SNAT off). The one place this address is written:
 # the cluster nodes' return routes point at it
 ts_gateway_ip: 10.0.20.2
