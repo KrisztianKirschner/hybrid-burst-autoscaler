@@ -2,6 +2,19 @@
   hosts: all
   become: true
   gather_facts: false
+  # A VM the apply just created may still be booting or running cloud-init
+  pre_tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    # rc 2 is "done with recoverable errors" (degraded); only 1 is a real failure
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command: cloud-init status --wait
+      register: common_cloud_init
+      changed_when: false
+      failed_when: common_cloud_init.rc not in [0, 2]
+      check_mode: false
   roles:
     - common
   tags: common
