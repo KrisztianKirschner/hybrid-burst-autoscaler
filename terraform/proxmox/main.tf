@@ -6,7 +6,7 @@ locals {
       ip_address = "10.0.20.2/24",
       cores      = 1
       memory     = 512
-      disk_size  = 16
+      disk_size  = 20
       cluster    = "none"
       node_role  = "router"
     }
