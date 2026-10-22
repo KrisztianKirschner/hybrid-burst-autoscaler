@@ -1,6 +1,15 @@
 locals {
-
+  # Module defaults: cores 2, memory 4096 MB, disk_size 30 GB
   vms = {
+    "ts-gateway" = {
+      vmid       = 202,
+      ip_address = "10.0.20.2/24",
+      cores      = 1
+      memory     = 512
+      disk_size  = 16
+      cluster    = "none"
+      node_role  = "router"
+    }
     "obs-01" = {
       vmid       = 230,
       ip_address = "10.0.20.30/24",
