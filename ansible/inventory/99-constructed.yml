@@ -6,6 +6,7 @@ groups:
   swarm_control: cluster == 'swarm' and node_role == 'control'
   swarm_workers: cluster == 'swarm' and node_role == 'worker'
   observability: node_role == 'observability'
+  ts_routers: node_role == 'router'
   docker: cluster == 'swarm' or node_role == 'observability'
   # Every node of either cluster: they sit in blocks routed through ts-gateway (docs/network.md §2.2)
   cluster_nodes: cluster in ['swarm', 'k8s']

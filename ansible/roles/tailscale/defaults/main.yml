@@ -1,0 +1,4 @@
+tailscale_auth_key: "{{ lookup('env', 'TS_LAB_ROUTER_AUTH_KEY') }}"
+tailscale_hostname: "{{ inventory_hostname }}"
+tailscale_tags: tag:lab-router
+tailscale_advertise_routes: 10.0.20.8/29

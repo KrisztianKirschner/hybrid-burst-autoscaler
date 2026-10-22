@@ -76,6 +76,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           RUSTFS_ACCESS_KEY: ${{ secrets.RUSTFS_ACCESS_KEY }}
           RUSTFS_SECRET_KEY: ${{ secrets.RUSTFS_SECRET_KEY }}
+          TS_LAB_ROUTER_AUTH_KEY: ${{ secrets.TS_LAB_ROUTER_AUTH_KEY }}
         run: ansible-playbook playbooks/site.yml --check --diff
 
       # Clean up the key
@@ -143,6 +144,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           RUSTFS_ACCESS_KEY: ${{ secrets.RUSTFS_ACCESS_KEY }}
           RUSTFS_SECRET_KEY: ${{ secrets.RUSTFS_SECRET_KEY }}
+          TS_LAB_ROUTER_AUTH_KEY: ${{ secrets.TS_LAB_ROUTER_AUTH_KEY }}
         run: ansible-playbook playbooks/site.yml --diff
 
       - name: Remove SSH key

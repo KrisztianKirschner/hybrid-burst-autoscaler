@@ -1,0 +1,77 @@
+- name: Check that the auth key is set
+  ansible.builtin.assert:
+    that: tailscale_auth_key | length > 0
+    fail_msg: TS_LAB_ROUTER_AUTH_KEY is not set in the environment
+    quiet: true
+
+- name: Enable IP forwarding
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-tailscale.conf
+    content: |
+      net.ipv4.ip_forward = 1
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload sysctl
+
+# tailscale up refuses to advertise routes while forwarding is off
+- name: Apply sysctl before Tailscale starts
+  ansible.builtin.meta: flush_handlers
+
+- name: Download the Tailscale install script
+  ansible.builtin.get_url:
+    url: https://tailscale.com/install.sh
+    dest: /usr/local/share/tailscale-install.sh
+    mode: "0755"
+
+- name: Install Tailscale
+  ansible.builtin.command: /usr/local/share/tailscale-install.sh
+  args:
+    creates: /usr/bin/tailscale
+
+# check_mode: false so the --check run on a PR can still read it; before the first install
+# the binary is missing, which is why a non-zero rc counts as "not joined"
+- name: Read the Tailscale state
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Join the tailnet
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - up
+      - "--auth-key={{ tailscale_auth_key }}?ephemeral=false&preauthorized=true"
+      - "--advertise-tags={{ tailscale_tags }}"
+      - "--advertise-routes={{ tailscale_advertise_routes }}"
+      - --snat-subnet-routes=false
+      - --accept-routes
+      - "--hostname={{ tailscale_hostname }}"
+  when: tailscale_status.rc != 0 or (tailscale_status.stdout | from_json).BackendState != 'Running'
+  changed_when: true
+  no_log: true   # the key is in the arguments, and the logs are public
+
+- name: Install iptables
+  ansible.builtin.apt:
+    name: iptables
+    state: present
+  register: tailscale_iptables
+
+- name: Install the MSS clamp unit
+  ansible.builtin.copy:
+    src: hba-mss-clamp.service
+    dest: /etc/systemd/system/hba-mss-clamp.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tailscale_mss_unit
+
+- name: Ensure the MSS clamp is enabled and applied
+  ansible.builtin.systemd_service:
+    name: hba-mss-clamp
+    daemon_reload: true
+    enabled: true
+    state: started
+  when: not (ansible_check_mode and (tailscale_iptables is changed or tailscale_mss_unit is changed))
