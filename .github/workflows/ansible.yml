@@ -14,9 +14,11 @@ on:
 permissions:
   contents: read
 
-# one run per ref at a time; never cancel a run that may be mid-playbook
+# one run per ref at a time; never cancel a run that may be mid-playbook.
+# A fixed name: when called, github.workflow is the caller's, which would give the
+# caller's group and leave this run waiting for its own caller
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ansible-${{ github.ref }}
   cancel-in-progress: false
 
 env:
