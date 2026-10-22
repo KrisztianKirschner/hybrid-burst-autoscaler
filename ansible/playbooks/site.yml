@@ -14,8 +14,8 @@
     - tailscale
   tags: tailscale
 
-# Right after common: CI reaches the cluster nodes through ts-gateway, so these routes
-# must be in place before anything else depends on that path (docs/network.md §2.2)
+# CI reaches the cluster nodes through ts-gateway, so these routes
+# must be in place before anything else depends on that path
 - name: Configure return routes through ts-gateway
   hosts: cluster_nodes
   become: true
