@@ -87,3 +87,9 @@ jobs:
       # Clean up the plan file after apply, even if the apply fails
       - if: always()
         run: rm -f tfplan
+
+  # Configure what the apply created; runs only after a successful apply
+  ansible:
+    needs: terraform-apply
+    uses: ./.github/workflows/ansible.yml
+    secrets: inherit
