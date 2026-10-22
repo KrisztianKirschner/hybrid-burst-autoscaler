@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
     paths: ["ansible/**", "stacks/**", ".github/workflows/ansible.yml"]
+  # Called by the Terraform Proxmox Pipeline after an apply, so new VMs are configured
+  # only once they exist (a push alone can run before the apply)
+  workflow_call:
+  workflow_dispatch:
 
 # Least-privilege default
 permissions:
