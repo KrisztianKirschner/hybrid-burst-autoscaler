@@ -1,0 +1,12 @@
+[Unit]
+Description=TCP MSS clamping for traffic through tailscale0
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for d in -i -o; do iptables -t mangle -C FORWARD $d tailscale0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -t mangle -A FORWARD $d tailscale0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu; done'
+
+[Install]
+WantedBy=multi-user.target
