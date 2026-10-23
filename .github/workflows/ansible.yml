@@ -26,8 +26,9 @@ env:
 
 jobs:
   ansible-check:
-    # Push/dispatch on this repo, or PRs from this repo only (fork PRs get no secrets)
-    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
+    # PRs only, from this repo (fork PRs get no secrets): a preview for review. On main the
+    # real run follows with no approval pause, so a dry run there would only delay it
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
     runs-on: ['self-hosted']
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_AWS_ACCESS_KEY_ID }}
@@ -91,8 +92,8 @@ jobs:
         run: rm -f "$RUNNER_TEMP/ansible_ssh_key"
 
   ansible-run:
-    # Only on main (merge or manual dispatch)
-    needs: ansible-check
+    # Only on main (merge, manual dispatch, or called after a Terraform apply, which
+    # reports the caller's event: push)
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ['self-hosted']
     # Waits for manual approval (proxmox environment)
