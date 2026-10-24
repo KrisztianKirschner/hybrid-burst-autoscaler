@@ -1,7 +1,7 @@
 services:
   controller:
     # Built by .github/workflows/autoscaler.yml from autoscaler/swarm/
-    image: ghcr.io/krisztiankirschner/hba-autoscaler:sha-04785ec
+    image: ghcr.io/krisztiankirschner/hba-autoscaler:sha-3297ff6
     # Scales hba_worker through the Docker socket, which needs root. Numeric on purpose:
     # the hardened image has no "root" entry in /etc/passwd ("unable to find user root")
     user: "0"
