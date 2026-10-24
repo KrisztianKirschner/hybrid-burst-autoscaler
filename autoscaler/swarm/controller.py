@@ -4,7 +4,9 @@ Every poll_interval seconds:
   1. read the queue length from Prometheus (redis_key_size{key="hba:jobs"})
   2. read the worker service's current replica count from the Docker API
   3. desired = ceil(depth / jobs_per_replica), clamped to [min_replicas, max_replicas]
-  4. scale if desired differs and the cooldown for that direction has passed
+  4. scale up to desired once the scale-up cooldown has passed; scale down only to the
+     highest desired of the last scale_down_stabilization seconds (the Kubernetes HPA's
+     scale-down stabilization window, so both orchestrators scale down by the same rule)
 
 Settings come from policy.yml (path in HBA_POLICY_FILE). The controller's own
 metrics are served on :8000/metrics for the in-swarm Prometheus agent.
@@ -16,6 +18,7 @@ import os
 import signal
 import threading
 import time
+from collections import deque
 
 import docker
 import requests
@@ -37,7 +40,7 @@ MIN_REPLICAS = policy["min_replicas"]
 MAX_REPLICAS = policy["max_replicas"]
 POLL_INTERVAL = policy["poll_interval"]        # seconds
 UP_COOLDOWN = policy["scale_up_cooldown"]      # seconds since the last scale-up
-DOWN_COOLDOWN = policy["scale_down_cooldown"]  # seconds since the last scaling of either kind
+DOWN_WINDOW = policy["scale_down_stabilization"]  # seconds of desired counts a scale-down looks back over
 METRICS_PORT = 8000
 
 DEPTH = Gauge("hba_autoscaler_queue_depth", "Queue length read from Prometheus")
@@ -97,12 +100,12 @@ def main():
     client = docker.from_env()
     start_http_server(METRICS_PORT)
     log.info(
-        "started: service=%s query=%s replicas=%s..%s jobs_per_replica=%s poll=%ss",
-        SERVICE, QUERY, MIN_REPLICAS, MAX_REPLICAS, JOBS_PER_REPLICA, POLL_INTERVAL,
+        "started: service=%s query=%s replicas=%s..%s jobs_per_replica=%s poll=%ss down_window=%ss",
+        SERVICE, QUERY, MIN_REPLICAS, MAX_REPLICAS, JOBS_PER_REPLICA, POLL_INTERVAL, DOWN_WINDOW,
     )
 
-    last_up = float("-inf")     # time.monotonic() of the last scale-up
-    last_scale = float("-inf")  # time.monotonic() of the last scaling of either kind
+    last_up = float("-inf")  # time.monotonic() of the last scale-up
+    recent = deque()         # (time.monotonic(), desired) of the last DOWN_WINDOW seconds
 
     while not stop.is_set():
         try:
@@ -129,18 +132,24 @@ def main():
         DESIRED.set(desired)
 
         now = time.monotonic()
-        # Scale up quickly; scale down only after things have been calm for DOWN_COOLDOWN,
-        # so a scale-down never undoes a scale-up from a few seconds ago
+        recent.append((now, desired))
+        while recent[0][0] < now - DOWN_WINDOW:
+            recent.popleft()
+        # Scale down only to the highest count wanted within the window: a queue that empties
+        # for a moment (arrivals between the capacity of 1 and of all replicas) must not undo a
+        # scale-up, or the replicas oscillate. A 60 s cooldown did exactly that (docs/loadtest.md §4)
+        stable = max(d for _, d in recent)
+
+        # Scale up quickly; scale down slowly
         if desired > current and now - last_up >= UP_COOLDOWN:
             if scale(service, current, desired):
                 SCALINGS.labels(direction="up").inc()
-                last_up = last_scale = now
-        elif desired < current and now - last_scale >= DOWN_COOLDOWN:
-            if scale(service, current, desired):
+                last_up = now
+        elif stable < current:
+            if scale(service, current, stable):
                 SCALINGS.labels(direction="down").inc()
-                last_scale = now
         else:
-            log.info("depth=%s current=%s desired=%s", depth, current, desired)
+            log.info("depth=%s current=%s desired=%s stable=%s", depth, current, desired, stable)
 
         stop.wait(POLL_INTERVAL)
 
