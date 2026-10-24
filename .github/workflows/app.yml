@@ -129,3 +129,20 @@ jobs:
         with:
           sarif_file: scout.sarif
           category: scout-hba-${{ matrix.name }}
+
+  # After a push on main: one bump PR per image. The worker stays frozen during comparison
+  bump:
+    name: bump (${{ matrix.name }})
+    needs: image
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [api, worker]
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/bump-image.yml
+    with:
+      image: hba-${{ matrix.name }}
+      file: stacks/swarm/hba.yml
