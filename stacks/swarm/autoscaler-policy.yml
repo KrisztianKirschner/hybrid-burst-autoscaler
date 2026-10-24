@@ -10,3 +10,4 @@ max_replicas: 6            # 3 worker nodes (swarm-01..03) × 2; raise for burst
 poll_interval: 5
 scale_up_cooldown: 15
 scale_down_cooldown: 60
+scale_down_stabilization: 300
