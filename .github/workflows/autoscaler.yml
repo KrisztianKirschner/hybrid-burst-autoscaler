@@ -94,3 +94,15 @@ jobs:
         with:
           sarif_file: scout.sarif
           category: scout-hba-autoscaler
+
+  # After a push on main: open (or update) the PR that points the stack at the new tag
+  bump:
+    needs: image
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/bump-image.yml
+    with:
+      image: hba-autoscaler
+      file: stacks/swarm/autoscaler.yml

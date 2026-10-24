@@ -1,0 +1,41 @@
+name: Bump image tag
+# Called after an image was pushed on main: points the stack at the new sha tag and opens a PR.
+# Merging that PR deploys, as before; nothing is deployed from here.
+# The work is in .github/scripts/bump-image-tag.sh (DRY_RUN=1 runs it locally).
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Image name without registry, e.g. hba-autoscaler
+        type: string
+        required: true
+      file:
+        description: The stack file that pins the image
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the bump branch
+      pull-requests: write   # open or update the PR
+    # One branch per image: at most one open bump PR each, and a newer build updates it.
+    # A frozen image (the worker during measurements) can then stay unbumped without
+    # holding up the others.
+    concurrency:
+      group: bump-${{ inputs.image }}
+      cancel-in-progress: false
+    steps:
+      # Credentials stay in the checkout here: this job pushes the bump branch
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Point the stack at the new tag, open or update the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ inputs.image }}
+          FILE: ${{ inputs.file }}
+        run: bash .github/scripts/bump-image-tag.sh "$IMAGE" "$FILE"
