@@ -11,7 +11,7 @@ services:
         constraints: ["node.role == manager"]
 
   worker:
-    image: ghcr.io/krisztiankirschner/hba-worker:sha-5de4c05
+    image: ghcr.io/krisztiankirschner/hba-worker:sha-72f97f5
     networks:
       - hba
     environment:
