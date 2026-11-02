@@ -38,7 +38,7 @@ jobs:
 
       - name: Log in to GHCR
         if: github.event_name == 'push'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -47,7 +47,7 @@ jobs:
       # The base images are Docker Hardened Images (dhi.io), which need a Docker Hub login to pull
       - name: Log in to dhi.io
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: dhi.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -75,7 +75,7 @@ jobs:
 
       - name: Docker Scout
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/scout-action@221e7f4860634eeb1579e3bd7ca232e577bd1864 # v1.26.0
+        uses: docker/scout-action@a4119c5a8c5076236a54e4ce99531f7e4dd2ef84 # v1.27.0
         with:
           command: cves
           # PRs: image only loaded locally; main: image was pushed to GHCR
@@ -90,7 +90,7 @@ jobs:
 
       - name: Upload Scout SARIF
         if: hashFiles('scout.sarif') != ''
-        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: scout.sarif
           category: scout-hba-autoscaler
