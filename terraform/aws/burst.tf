@@ -21,7 +21,7 @@ data "aws_ami" "ubuntu_amd64" {
 resource "aws_launch_template" "burst_swarm" {
   name                   = "hba-burst-swarm"
   image_id               = data.aws_ami.ubuntu_amd64.id
-  instance_type          = "c6a.large"
+  instance_type          = "c7a.large"
   vpc_security_group_ids = [aws_security_group.burst.id]
 
   # SSM and S3, without keys stored on the node
