@@ -18,7 +18,7 @@ data "aws_ami" "ubuntu_amd64" {
   }
 }
 
-resource "aws_launch_template" "burst" {
+resource "aws_launch_template" "burst_swarm" {
   name                   = "hba-burst-swarm"
   image_id               = data.aws_ami.ubuntu_amd64.id
   instance_type          = "c6a.large"
@@ -46,7 +46,7 @@ resource "aws_launch_template" "burst" {
     }
   }
 
-  user_data = filebase64("${path.module}/templates/burst-user-data.sh")
+  user_data = filebase64("${path.module}/templates/burst-swarm-user-data.sh")
 
   tag_specifications {
     resource_type = "instance"
