@@ -25,3 +25,7 @@ output "burst_instance_profile_name" {
 output "gateway_instance_id" {
   value = aws_instance.gateway.id
 }
+
+output "burst_asg_name" {
+  value = aws_autoscaling_group.burst_swarm.name
+}
