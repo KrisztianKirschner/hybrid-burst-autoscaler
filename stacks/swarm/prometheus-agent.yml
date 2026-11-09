@@ -21,6 +21,11 @@ scrape_configs:
     static_configs:
       - targets: ["autoscaler_controller:8000"]
 
+  # The burst controller's metrics (hba_burst_*): Pending tasks, nodes, join time
+  - job_name: burst-controller
+    static_configs:
+      - targets: ["burst_controller:8000"]
+
   # One target per running worker task, on its overlay address
   # https://prometheus.io/docs/guides/dockerswarm/
   # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#dockerswarm_sd_config
