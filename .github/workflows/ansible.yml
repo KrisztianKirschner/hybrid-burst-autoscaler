@@ -152,6 +152,9 @@ jobs:
           RUSTFS_ACCESS_KEY: ${{ secrets.RUSTFS_ACCESS_KEY }}
           RUSTFS_SECRET_KEY: ${{ secrets.RUSTFS_SECRET_KEY }}
           TS_LAB_ROUTER_AUTH_KEY: ${{ secrets.TS_LAB_ROUTER_AUTH_KEY }}
+          # Only in the proxmox environment, so the PR dry run above doesn't get them
+          BURST_CONTROLLER_AWS_ACCESS_KEY_ID: ${{ secrets.BURST_CONTROLLER_AWS_ACCESS_KEY_ID }}
+          BURST_CONTROLLER_AWS_SECRET_ACCESS_KEY: ${{ secrets.BURST_CONTROLLER_AWS_SECRET_ACCESS_KEY }}
         run: ansible-playbook playbooks/site.yml --diff
 
       - name: Remove SSH key
