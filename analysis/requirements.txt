@@ -1,6 +1,0 @@
-# Analysis notebooks (calibration.ipynb). Direct dependencies, exact versions.
-# python -m venv analysis/.venv && analysis/.venv/Scripts/pip install -r analysis/requirements.txt
-pandas==3.0.6
-matplotlib==3.11.2
-ipykernel==7.4.0
-nbconvert==7.17.2
