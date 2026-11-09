@@ -1,0 +1,46 @@
+services:
+  controller:
+    # Built by .github/workflows/burst-controller.yml from autoscaler/burst/.
+    # sha-0000000 is a placeholder until the first image exists and its bump PR is merged
+    image: ghcr.io/krisztiankirschner/hba-burst-controller:sha-0000000
+    # Drains and removes nodes through the Docker socket, which needs root. Numeric on purpose:
+    # the hardened image has no "root" entry in /etc/passwd
+    user: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      HBA_AWS_ACCESS_KEY_ID_FILE: /run/secrets/burst_aws_access_key_id
+      HBA_AWS_SECRET_ACCESS_KEY_FILE: /run/secrets/burst_aws_secret_access_key
+    secrets:
+      - burst_aws_access_key_id
+      - burst_aws_secret_access_key
+    configs:
+      - source: burst_policy
+        target: /etc/hba-burst-controller/policy.yml   # HBA_POLICY_FILE in the image
+    # On the overlay so the Prometheus agent can scrape :8000/metrics
+    networks:
+      - hba
+    deploy:
+      replicas: 1
+      # Only a manager can drain and remove nodes
+      placement:
+        constraints: ["node.role == manager"]
+
+# Swarm configs are immutable: a changed file needs a new name, hence the version suffix
+configs:
+  burst_policy:
+    name: burst_policy_${BURST_POLICY_VERSION:-1}
+    file: ./burst-policy.yml
+
+# Created by the stacks Ansible role
+secrets:
+  burst_aws_access_key_id:
+    external: true
+  burst_aws_secret_access_key:
+    external: true
+
+# The overlay created by the hba stack; deploy that stack first
+networks:
+  hba:
+    external: true
+    name: hba_hba
