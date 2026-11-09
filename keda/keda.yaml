@@ -1,0 +1,23 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: hba-api-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hba-api              # Matches the deployment you created earlier
+  minReplicaCount: 0           # Never scale below 1 pod
+  maxReplicaCount: 4           # Never scale above 5 pods
+  cooldownPeriod: 300          # Wait 5 mins before scaling down after an event
+  pollingInterval: 15          # How often KEDA evaluates the trigger (in seconds)
+  triggers:
+  - type: redis
+    metadata:
+      # Replace with your actual Redis service DNS or IP and port
+      address: redis-master.default.svc.cluster.local:6379 
+      # The name of the Redis List KEDA will monitor
+      listName: my-task-queue 
+      # Target number of items per pod (e.g., 15 items = 3 pods)
+      listLength: "5"
