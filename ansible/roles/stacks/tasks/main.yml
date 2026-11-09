@@ -25,7 +25,7 @@
 - name: Check that the stack secrets are set
   ansible.builtin.assert:
     that: item.data | length > 0
-    fail_msg: "{{ item.name }} is empty: RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY not set in the environment"
+    fail_msg: "{{ item.name }} is empty: its variable is not set in the environment (see stacks_secrets)"
     quiet: true
   # PR dry runs have no GitHub environment, so the environment's secrets are empty there
   when: not ansible_check_mode
@@ -58,3 +58,4 @@
   environment:
     PROMETHEUS_AGENT_CONFIG_VERSION: "{{ (lookup('ansible.builtin.file', stacks_src_dir ~ 'prometheus-agent.yml') | hash('sha1'))[:12] }}"
     AUTOSCALER_POLICY_VERSION: "{{ (lookup('ansible.builtin.file', stacks_src_dir ~ 'autoscaler-policy.yml') | hash('sha1'))[:12] }}"
+    BURST_POLICY_VERSION: "{{ (lookup('ansible.builtin.file', stacks_src_dir ~ 'burst-policy.yml') | hash('sha1'))[:12] }}"
