@@ -65,3 +65,35 @@ resource "aws_iam_role_policy" "burst_node" {
   role   = aws_iam_role.burst_node.id
   policy = data.aws_iam_policy_document.burst_node.json
 }
+
+# The burst controller runs on swarm-ctl, on-prem, so it can't use an instance role.5555
+resource "aws_iam_user" "burst_controller" {
+  name = "hba-burst-controller"
+}
+
+data "aws_iam_policy_document" "burst_controller" {
+  statement {
+    sid = "ResizeBurstGroup"
+    actions = [
+      "autoscaling:SetDesiredCapacity",
+      "autoscaling:TerminateInstanceInAutoScalingGroup"
+    ]
+    resources = [aws_autoscaling_group.burst_swarm.arn]
+  }
+
+  # AWS doesn't allow limiting these Describe calls to one resource
+  statement {
+    sid = "ReadBurstState"
+    actions = [
+      "autoscaling:DescribeAutoScalingGroups",
+      "ec2:DescribeInstances"
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_user_policy" "burst_controller" {
+  name   = "hba-burst-controller"
+  user   = aws_iam_user.burst_controller.name
+  policy = data.aws_iam_policy_document.burst_controller.json
+}
