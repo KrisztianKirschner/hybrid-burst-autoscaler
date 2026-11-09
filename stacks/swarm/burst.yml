@@ -2,7 +2,7 @@ services:
   controller:
     # Built by .github/workflows/burst-controller.yml from autoscaler/burst/.
     # sha-0000000 is a placeholder until the first image exists and its bump PR is merged
-    image: ghcr.io/krisztiankirschner/hba-burst-controller:sha-0000000
+    image: ghcr.io/krisztiankirschner/hba-burst-controller:sha-37a73ff
     # Drains and removes nodes through the Docker socket, which needs root. Numeric on purpose:
     # the hardened image has no "root" entry in /etc/passwd
     user: "0"
