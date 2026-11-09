@@ -1,0 +1,13 @@
+# Burst controller policy (autoscaler/burst/controller.py), mounted as a Swarm config.
+# Field names follow the Kubernetes Cluster Autoscaler's flags; docs/burst.md §4 compares them.
+service: hba_worker
+asg_name: hba-burst-swarm
+aws_region: eu-central-1
+min_nodes: 0
+max_nodes: 2
+replicas_per_node: 2         # c7a.large: 2 physical cores, 1 CPU reserved per task
+# Times in seconds (plain numbers, no "s")
+scan_interval: 10
+new_pod_scale_up_delay: 10
+scale_down_unneeded_time: 120
+max_node_provision_time: 480
