@@ -28,3 +28,8 @@ app/coverage
 
 # Local photos for docker-compose.dev.yml (not committed: size, and EXIF/GPS data)
 app/dev-images/
+
+# Python virtualenv for the analysis notebooks
+analysis/.venv/
+
+__pycache__/

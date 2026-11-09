@@ -1,0 +1,112 @@
+name: Burst controller build
+on:
+  pull_request:
+    paths: ["autoscaler/burst/**", ".github/workflows/burst-controller.yml"]
+  push:
+    branches: [main]
+    paths: ["autoscaler/burst/**", ".github/workflows/burst-controller.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Same flow as the replica controller (autoscaler.yml), kept separate so that a change here
+  # doesn't rebuild and bump the replica controller between measurements
+  image:
+    if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/krisztiankirschner/hba-burst-controller
+    permissions:
+      contents: read
+      packages: write   # push to GHCR
+      pull-requests: write   # Scout PR comment
+      security-events: write   # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The decision logic and the API parsing need only the standard library
+      - name: Syntax check and unit tests
+        working-directory: autoscaler/burst
+        run: |
+          python3 -m py_compile controller.py decision.py swarm_adapter.py aws_client.py
+          python3 -m unittest discover tests
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The base images are Docker Hardened Images (dhi.io), which need a Docker Hub login to pull
+      - name: Log in to dhi.io
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: autoscaler/burst
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'push' }}          # PRs: build only; main: build + push
+          load: ${{ github.event_name == 'pull_request' }}  # PRs: keep image locally for Scout
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=burst-controller
+          cache-to: type=gha,mode=max,scope=burst-controller
+
+      - name: Docker Scout
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/scout-action@a4119c5a8c5076236a54e4ce99531f7e4dd2ef84 # v1.27.0
+        with:
+          command: cves
+          # PRs: image only loaded locally; main: image was pushed to GHCR
+          image: ${{ github.event_name == 'pull_request' && format('local://{0}', steps.meta.outputs.tags) || steps.meta.outputs.tags }}
+          only-severities: critical,high
+          exit-code: false
+          sarif-file: scout.sarif
+          write-comment: ${{ github.event_name == 'pull_request' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Upload Scout SARIF
+        if: hashFiles('scout.sarif') != ''
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: scout.sarif
+          category: scout-hba-burst-controller
+
+  # After a push on main: open (or update) the PR that points the stack at the new tag
+  bump:
+    needs: image
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/bump-image.yml
+    with:
+      image: hba-burst-controller
+      file: stacks/swarm/burst.yml

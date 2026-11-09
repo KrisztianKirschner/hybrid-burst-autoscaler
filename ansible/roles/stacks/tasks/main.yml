@@ -27,6 +27,8 @@
     that: item.data | length > 0
     fail_msg: "{{ item.name }} is empty: RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY not set in the environment"
     quiet: true
+  # PR dry runs have no GitHub environment, so the environment's secrets are empty there
+  when: not ansible_check_mode
   loop: "{{ stacks_secrets }}"
   loop_control:
     label: "{{ item.name }}"
@@ -42,6 +44,7 @@
   loop_control:
     label: "{{ item.name }}"
   no_log: true
+  when: not ansible_check_mode
 
 - name: Deploy stacks
   community.docker.docker_stack:
