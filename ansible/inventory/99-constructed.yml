@@ -10,3 +10,6 @@ groups:
   docker: cluster == 'swarm' or node_role == 'observability'
   # Every node of either cluster: they sit in blocks routed through ts-gateway (docs/network.md §2.2)
   cluster_nodes: cluster in ['swarm', 'k8s']
+  # Powered-on hosts: the active cluster plus those in none (active_cluster comes from Terraform).
+  # CI runs with --limit active, so the stopped cluster's VMs are never contacted
+  active: cluster in ['none', active_cluster]

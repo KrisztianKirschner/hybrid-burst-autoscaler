@@ -84,7 +84,8 @@ jobs:
           RUSTFS_ACCESS_KEY: ${{ secrets.RUSTFS_ACCESS_KEY }}
           RUSTFS_SECRET_KEY: ${{ secrets.RUSTFS_SECRET_KEY }}
           TS_LAB_ROUTER_AUTH_KEY: ${{ secrets.TS_LAB_ROUTER_AUTH_KEY }}
-        run: ansible-playbook playbooks/site.yml --check --diff
+        # Only the powered-on hosts (the "active" group, from Terraform's active_cluster)
+        run: ansible-playbook playbooks/site.yml --limit active --check --diff
 
       # Clean up the key
       - name: Remove SSH key
@@ -155,7 +156,7 @@ jobs:
           # Only in the proxmox environment, so the PR dry run above doesn't get them
           BURST_CONTROLLER_AWS_ACCESS_KEY_ID: ${{ secrets.BURST_CONTROLLER_AWS_ACCESS_KEY_ID }}
           BURST_CONTROLLER_AWS_SECRET_ACCESS_KEY: ${{ secrets.BURST_CONTROLLER_AWS_SECRET_ACCESS_KEY }}
-        run: ansible-playbook playbooks/site.yml --diff
+        run: ansible-playbook playbooks/site.yml --limit active --diff
 
       - name: Remove SSH key
         if: always()
