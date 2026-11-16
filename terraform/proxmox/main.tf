@@ -61,4 +61,6 @@ module "vm" {
   cores     = try(each.value.cores, null)
   memory    = try(each.value.memory, null)
   disk_size = try(each.value.disk_size, null)
+
+  started = contains(["none", var.active_cluster], each.value.cluster)
 }
