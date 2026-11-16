@@ -1,6 +1,6 @@
 # Burst Controller
 
-**Status:** 2026-11-09. The launch template, the Auto Scaling group and the boot script are built and tested (`terraform/aws/burst.tf`, `autoscaling.tf`): a node launched by setting the desired capacity joins the swarm by itself and takes jobs ([loadtest.md](loadtest.md) §4.1). The burst controller is written (`autoscaler/burst/`) and unit-tested, but has not run against the live swarm or AWS yet. The decisions are recorded in [ADR 0009](adrs/0009-separate-burst-controller-resizing-an-auto-scaling-group.md); the build order is in §10.
+**Status:** 2026-11-09. The launch template, the Auto Scaling group and the boot script are built and tested (`terraform/aws/burst.tf`, `autoscaling.tf`): a node launched by setting the desired capacity joins the swarm by itself and takes jobs ([loadtest.md](loadtest.md) §4.1). The burst controller (`autoscaler/burst/`) runs on the swarm: forced tests on 2026-11-09 and burst run 1 on 2026-11-16 ([loadtest.md](loadtest.md) §4.2) added and removed two nodes without manual help. The decisions are recorded in [ADR 0009](adrs/0009-separate-burst-controller-resizing-an-auto-scaling-group.md); the build order is in §10.
 
 **Audience:** anyone building or changing the burst tier (Terraform, user data, the controller), and anyone comparing it with the Kubernetes Cluster Autoscaler.
 
@@ -213,7 +213,7 @@ flowchart LR
 | 1 | **Done.** Launch template + ASG (desired 0), in `terraform/aws` | Krisztián (with hints) |
 | 2 | **Done.** Worker join token in SSM, by hand once (the token only changes when rotated) | Krisztián |
 | 3 | **Done.** User data (§7). Test it by setting the desired capacity to 1 by hand: the node must join and get tasks | Krisztián, Claude |
-| 4 | **Written, not yet run live.** The `hba-burst-controller` IAM user (§6), then `autoscaler/burst/`: a pure decision function (cluster state in, target out, no I/O), a Swarm adapter (Docker API) and an AWS client (boto3), plus metrics | Claude |
+| 4 | **Done.** The `hba-burst-controller` IAM user (§6), then `autoscaler/burst/`: a pure decision function (cluster state in, target out, no I/O), a Swarm adapter (Docker API) and an AWS client (boto3), plus metrics | Claude |
 | 5 | Stack, policy file, Swarm secret, `max_replicas` 10 for burst runs | Both |
 | 6 | First burst run with the frozen load profile ([loadtest.md](loadtest.md)) | Krisztián |
 
