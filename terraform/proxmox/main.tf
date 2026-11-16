@@ -45,6 +45,36 @@ locals {
       cluster    = "swarm"
       node_role  = "worker"
     }
+    # Kubernetes (k3s) set: the free addresses of the ts-gateway block 10.0.20.8/29,
+    # which Swarm shares (.11-.14). Powered on only when active_cluster = "k8s"
+    "k8s-ctl" = {
+      vmid       = 221,
+      ip_address = "10.0.20.8/24",
+      disk_size  = 30
+      cluster    = "k8s"
+      node_role  = "control"
+    }
+    "k8s-01" = {
+      vmid       = 222,
+      ip_address = "10.0.20.9/24",
+      disk_size  = 30
+      cluster    = "k8s"
+      node_role  = "worker"
+    }
+    "k8s-02" = {
+      vmid       = 223,
+      ip_address = "10.0.20.10/24",
+      disk_size  = 30
+      cluster    = "k8s"
+      node_role  = "worker"
+    }
+    "k8s-03" = {
+      vmid       = 224,
+      ip_address = "10.0.20.15/24",
+      disk_size  = 30
+      cluster    = "k8s"
+      node_role  = "worker"
+    }
   }
 }
 
