@@ -75,3 +75,24 @@
     enabled: true
     state: started
   when: not (ansible_check_mode and (tailscale_iptables is changed or tailscale_mss_unit is changed))
+
+# Subnet routes stay without SNAT, so AWS burst nodes reach the lab with their real addresses.
+# Tailnet devices (laptop, CI) are masqueraded to this router's LAN address instead: a VM
+# created inside the advertised block has no return route on its first boot, and replies
+# to a 100.x source would go to OPNsense and hang. Replies to 10.0.20.2 need no route.
+- name: Install the tailnet SNAT unit
+  ansible.builtin.copy:
+    src: hba-tailnet-snat.service
+    dest: /etc/systemd/system/hba-tailnet-snat.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tailscale_snat_unit
+
+- name: Ensure the tailnet SNAT is enabled and applied
+  ansible.builtin.systemd_service:
+    name: hba-tailnet-snat
+    daemon_reload: true
+    enabled: true
+    state: started
+  when: not (ansible_check_mode and (tailscale_iptables is changed or tailscale_snat_unit is changed))
