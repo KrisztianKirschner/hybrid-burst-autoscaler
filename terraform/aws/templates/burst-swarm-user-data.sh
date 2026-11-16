@@ -6,6 +6,7 @@ set -euo pipefail
 # Same versions as ansible/roles/docker/defaults/main.yml: change them together
 DOCKER_VERSION="5:29.8.1-1~ubuntu.26.04~resolute"
 CONTAINERD_VERSION="2.3.6-1~ubuntu.26.04~resolute"
+AWS_CLI_VERSION="2.40.3"
 JOIN_TOKEN_PARAMETER="/hba/burst/swarm-join-token"
 REGION="eu-central-1"
 MANAGER_ADDR="10.0.20.11" # swarm-ctl
@@ -20,9 +21,6 @@ PRIVATE_IP=$(imds local-ipv4)
 # (HBA_TIER=auto), and the instance ID tells the burst controller which instance a node is
 hostnamectl set-hostname "burst-$INSTANCE_ID"
 
-snap wait system seed.loaded
-snap install aws-cli --classic
-
 # Same log rotation as the docker role. daemon.json first: the package starts Docker
 mkdir -p /etc/docker
 cat > /etc/docker/daemon.json <<'EOF'
@@ -35,7 +33,7 @@ cat > /etc/docker/daemon.json <<'EOF'
 }
 EOF
 
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+curl -fsSL --retry 5 --retry-all-errors https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 cat > /etc/apt/sources.list.d/docker.sources <<'EOF'
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
@@ -48,9 +46,17 @@ EOF
 # The lock timeout waits for Ubuntu's own apt jobs at first boot instead of failing
 export DEBIAN_FRONTEND=noninteractive
 apt-get -o DPkg::Lock::Timeout=120 update
-apt-get -o DPkg::Lock::Timeout=120 install -y \
+apt-get -o DPkg::Lock::Timeout=120 install -y unzip \
   "docker-ce=$DOCKER_VERSION" "docker-ce-cli=$DOCKER_VERSION" "containerd.io=$CONTAINERD_VERSION"
 apt-mark hold docker-ce docker-ce-cli containerd.io
+
+# AWS's own installer, not the snap: on 2026-11-16 the Snap Store refused, timed out or hung
+# on every launch, and the node never joined (docs/burst.md §7)
+curl -fsSL --retry 5 --retry-all-errors \
+  "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+rm -rf /tmp/awscliv2.zip /tmp/aws
 
 TOKEN=$(aws ssm get-parameter --name "$JOIN_TOKEN_PARAMETER" --with-decryption \
   --query Parameter.Value --output text --region "$REGION")
