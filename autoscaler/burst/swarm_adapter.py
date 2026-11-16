@@ -1,6 +1,8 @@
 """Swarm adapter: turns the Docker API's nodes and tasks into the decision function's terms,
 and carries out the Swarm side of a scale-down. A Kubernetes adapter offers the same methods."""
 
+import copy
+import time
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -88,8 +90,42 @@ class SwarmAdapter:
         makes a new revision, so a task left over from an earlier scale step is never retried,
         not even when a node joins. Scaling down removes unassigned tasks first; scaling back up
         creates them again under the current revision, and the scheduler places them."""
-        service = self.client.services.get(self.service)
-        replicas = service.attrs["Spec"]["Mode"]["Replicated"]["Replicas"]
-        service.scale(replicas - count)
-        service.reload()  # scale() sends the version it last read
-        service.scale(replicas)
+        replicas = self.client.api.inspect_service(self.service)["Spec"]["Mode"]["Replicated"]["Replicas"]
+        self._set_replicas(replicas - count)
+        self._wait_for_tasks(replicas - count)
+        self._set_replicas(replicas)
+
+    def _set_replicas(self, replicas, attempts=5):
+        """Sends the service's current spec back with only the replica count changed, as the
+        Docker CLI does. docker-py's scale() reads the spec with defaults filled in
+        (insert_defaults) and sends that; after a `docker stack deploy` Swarm takes it for a new
+        task template and restarts every task (seen on 2026-11-16, docs/burst.md §3.1)."""
+        api = self.client.api
+        for attempt in range(attempts):
+            current = api.inspect_service(self.service)
+            spec = current["Spec"]
+            mode = copy.deepcopy(spec["Mode"])
+            mode["Replicated"]["Replicas"] = replicas
+            try:
+                api.update_service(
+                    current["ID"], current["Version"]["Index"],
+                    task_template=spec["TaskTemplate"], name=spec["Name"], labels=spec.get("Labels"),
+                    mode=mode, update_config=spec.get("UpdateConfig"),
+                    rollback_config=spec.get("RollbackConfig"), endpoint_spec=spec.get("EndpointSpec"),
+                )
+                return
+            # The version moved between inspect and update (the replica controller, or Swarm's own
+            # status writes): read again. Matched on the text, so this module needs no docker import.
+            except Exception as err:  # noqa: BLE001
+                if "out of sequence" not in str(err) or attempt == attempts - 1:
+                    raise
+
+    def _wait_for_tasks(self, replicas, timeout=15):
+        """Waits until Swarm has marked the extra tasks for removal. Scaling back up before that
+        could leave the old, stranded tasks in place instead of creating new ones."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            running = self.client.api.tasks(filters={"service": self.service, "desired-state": "running"})
+            if len(running) <= replicas:
+                return
+            time.sleep(0.5)
