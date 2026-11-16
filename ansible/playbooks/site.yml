@@ -77,8 +77,9 @@
     - stacks
   tags: stacks
 
+# Either cluster: the role enables keepalived only where cluster == active_cluster
 - name: Configure cluster VIP
-  hosts: swarm
+  hosts: cluster_nodes
   become: true
   gather_facts: true   # keepalived_interface comes from ansible_default_ipv4
   roles:

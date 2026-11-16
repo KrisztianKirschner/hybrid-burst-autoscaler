@@ -1,5 +1,6 @@
 cluster_vip: 10.0.20.100
-active_cluster: swarm
+# active_cluster is not set here: it is a host variable from Terraform (var.active_cluster),
+# the same switch that powers the VMs on and off
 
 # Lab-side Tailscale subnet router (VM, SNAT off). The one place this address is written:
 # the cluster nodes' return routes point at it
