@@ -45,6 +45,7 @@ POLICY = Policy(
     scale_down_unneeded_time=settings["scale_down_unneeded_time"],
     max_node_provision_time=settings["max_node_provision_time"],
     replicas_per_node=settings["replicas_per_node"],
+    stranded_task_grace=settings["stranded_task_grace"],
 )
 METRICS_PORT = 8000
 
@@ -56,6 +57,7 @@ DESIRED = Gauge("hba_burst_nodes_desired", "Desired capacity of the Auto Scaling
 READY = Gauge("hba_burst_nodes_ready", "Burst nodes ready and not draining")
 LAST_JOIN = Gauge("hba_burst_last_join_seconds", "Newest burst node: launch to swarm join")
 SCALE_EVENTS = Counter("hba_burst_scale_events", "Changes to the burst capacity", ["direction"])
+RESPAWNED = Counter("hba_burst_respawned_tasks", "Stranded Pending tasks re-created")
 ERRORS = Counter("hba_burst_errors", "Failed reads and actions", ["source"])
 
 # Set by SIGTERM (Swarm stopping the task) or SIGINT (Ctrl+C); also wakes the sleep
@@ -108,26 +110,31 @@ def apply(decision, swarm, group):
             SCALE_EVENTS.labels(direction="up").inc()
     if decision.drain is not None:
         attempt("docker", DOCKER_ERRORS, f"draining node {decision.drain}", swarm.drain, decision.drain)
+    if decision.respawn:
+        description = f"re-created {decision.respawn} stranded Pending task(s)"
+        if attempt("docker", DOCKER_ERRORS, description, swarm.respawn, decision.respawn):
+            RESPAWNED.inc(decision.respawn)
 
 
-def scan(swarm, group, unneeded_since):
-    """One iteration. Returns the scale-down timers for the next one."""
+def scan(swarm, group, timers):
+    """One iteration. timers is (unneeded_since, stranded_since); returns them for the next one."""
+    unneeded_since, stranded_since = timers
     now = time.time()
     try:
         view = swarm.read(now)
     except (*DOCKER_ERRORS, KeyError) as err:
         log.warning("cannot read the swarm: %s", err)
         ERRORS.labels(source="docker").inc()
-        return unneeded_since
+        return timers
     try:
         desired_capacity, instances = group.read()
     except (*AWS_ERRORS, LookupError) as err:
         log.warning("cannot read the Auto Scaling group: %s", err)
         ERRORS.labels(source="aws").inc()
-        return unneeded_since
+        return timers
 
     cluster = Cluster(view.pending, view.onprem_free_slots, view.nodes, desired_capacity, instances)
-    decision = decide(cluster, POLICY, unneeded_since, now)
+    decision = decide(cluster, POLICY, unneeded_since, now, stranded_since)
     publish(cluster)
     log.info(
         "pending=%s qualifying=%s free_onprem=%s nodes=%s instances=%s desired=%s",
@@ -135,7 +142,7 @@ def scan(swarm, group, unneeded_since):
         len(cluster.nodes), len(cluster.instances), desired_capacity,
     )
     apply(decision, swarm, group)
-    return decision.unneeded_since
+    return decision.unneeded_since, decision.stranded_since
 
 
 def handle_signal(signum, frame):
@@ -164,9 +171,9 @@ def main():
     start_http_server(METRICS_PORT)
     log.info("started: service=%s asg=%s policy=%s", SERVICE, ASG_NAME, POLICY)
 
-    unneeded_since = {}
+    timers = ({}, None)
     while not stop.is_set():
-        unneeded_since = scan(swarm, group, unneeded_since)
+        timers = scan(swarm, group, timers)
         stop.wait(SCAN_INTERVAL)
 
     log.info("stopped")

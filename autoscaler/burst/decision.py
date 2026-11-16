@@ -8,6 +8,10 @@ because lowering it would let AWS choose which instance to terminate.
 Scale-down: a node whose tasks fit elsewhere for scale_down_unneeded_time is drained, its
 instance terminated and the node removed, one node at a time. Each step is derived from the
 cluster's current state, so a restarted controller carries on where the last one stopped.
+
+Stranded tasks: if tasks keep waiting for lack of resources while free slots exist, the
+orchestrator has stopped retrying them. They are re-created (respawn), so that they are placed.
+Swarm needs this (docs/burst.md §3.1); an orchestrator that retries by itself never triggers it.
 """
 
 import math
@@ -22,6 +26,7 @@ class Policy:
     scale_down_unneeded_time: float
     max_node_provision_time: float
     replicas_per_node: int
+    stranded_task_grace: float = 15  # seconds that waiting tasks and free slots coexist before a respawn
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,8 @@ class Decision:
     drain: str | None = None          # node id
     terminate: dict[str, str] | None = None  # instance id -> reason
     remove: tuple[str, ...] = ()      # node ids
+    respawn: int = 0                  # stranded tasks to re-create
+    stranded_since: float | None = None  # pass to the next decide()
 
 
 def qualifying_pending(cluster, policy):
@@ -85,12 +92,26 @@ def _scale_up_target(cluster, policy):
     return target if target > cluster.desired_capacity else None
 
 
-def decide(cluster, policy, unneeded_since, now):
+def _respawn(cluster, policy, active, stranded_since, now):
+    """Returns (tasks to re-create, timer for the next decide()). A task that is placed normally
+    leaves Pending within one scheduler pass, so the grace only has to outlast that."""
+    waiting = qualifying_pending(cluster, policy)
+    free = cluster.onprem_free_slots + sum(max(0, policy.replicas_per_node - n.tasks) for n in active)
+    if not (waiting and free):
+        return 0, None
+    since = stranded_since if stranded_since is not None else now
+    if now - since < policy.stranded_task_grace:
+        return 0, since
+    return min(waiting, free), None
+
+
+def decide(cluster, policy, unneeded_since, now, stranded_since=None):
     in_group = {i.id for i in cluster.instances}
     joined = {n.instance_id for n in cluster.nodes}
     # A node whose instance is already terminating is no longer ours to judge
     nodes = [n for n in cluster.nodes if n.instance_id in in_group]
     active = [n for n in nodes if n.ready and not n.draining]
+    respawn, stranded = _respawn(cluster, policy, active, stranded_since, now)
 
     def free_slots_besides(node):
         others = sum(max(0, policy.replicas_per_node - n.tasks) for n in active if n is not node)
@@ -131,4 +152,6 @@ def decide(cluster, policy, unneeded_since, now):
         drain=drain,
         terminate=terminate or None,
         remove=tuple(n.id for n in cluster.nodes if not n.ready and n.instance_id not in in_group),
+        respawn=respawn,
+        stranded_since=stranded,
     )

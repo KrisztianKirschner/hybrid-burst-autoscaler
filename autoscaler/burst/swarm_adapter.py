@@ -81,3 +81,15 @@ class SwarmAdapter:
 
     def remove(self, node_id):
         self.client.nodes.get(node_id).remove()
+
+    def respawn(self, count):
+        """Re-creates `count` stranded Pending tasks. Swarm's scheduler re-queues a task it can't
+        place only while the task belongs to the service's current revision, and every scale
+        makes a new revision, so a task left over from an earlier scale step is never retried,
+        not even when a node joins. Scaling down removes unassigned tasks first; scaling back up
+        creates them again under the current revision, and the scheduler places them."""
+        service = self.client.services.get(self.service)
+        replicas = service.attrs["Spec"]["Mode"]["Replicated"]["Replicas"]
+        service.scale(replicas - count)
+        service.reload()  # scale() sends the version it last read
+        service.scale(replicas)
