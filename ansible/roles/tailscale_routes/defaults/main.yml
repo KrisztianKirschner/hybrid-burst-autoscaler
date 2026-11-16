@@ -5,7 +5,7 @@
 # (OPNsense), or the connection hangs.
 
 tailscale_routes_via: "{{ ts_gateway_ip }}"
-tailscale_routes_interface: "{{ ansible_default_ipv4.interface }}"   # needs gather_facts: true
+tailscale_routes_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"   # needs gather_facts: true
 
 tailscale_routes_destinations:
   - 10.100.0.0/16   # AWS VPC: burst nodes, through the AWS gateway

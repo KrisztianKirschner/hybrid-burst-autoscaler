@@ -32,7 +32,7 @@
 - name: Configure return routes through ts-gateway
   hosts: cluster_nodes
   become: true
-  gather_facts: true   # tailscale_routes_interface comes from ansible_default_ipv4
+  gather_facts: true   # tailscale_routes_interface comes from ansible_facts['default_ipv4']
   serial: 1            # a bad netplan file can cut off only one node at a time
   roles:
     - tailscale_routes
@@ -81,7 +81,7 @@
 - name: Configure cluster VIP
   hosts: cluster_nodes
   become: true
-  gather_facts: true   # keepalived_interface comes from ansible_default_ipv4
+  gather_facts: true   # keepalived_interface comes from ansible_facts['default_ipv4']
   roles:
     - keepalived
   tags: keepalived
