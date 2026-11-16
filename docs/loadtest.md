@@ -1,6 +1,6 @@
 # Load Test: the k6 Script and the First Pilot
 
-**Status:** 2026-10-24. The k6 script (`loadtest/k6/baseline.js`) works. Three full runs ("pilot 1" to "pilot 3") went from a laptop over Tailscale against the on-prem Swarm, without bursting. They agree on job time and capacity (2.3 jobs/s). Pilots 1 and 2 showed an autoscaler oscillation in the warm-up; after the scale-down rule was changed to a 300 s stabilization window, pilot 3 shows none and is the Swarm on-prem reference (section 4). The load generator is the laptop, not an AWS host ([ADR 0008](adrs/0008-run-k6-from-the-laptop-not-an-aws-host.md)). Two short experiments on 2026-11-08 added one AWS burst node (section 4.1). The run script that writes Grafana annotations, the measured burst runs and the Kubernetes runs are not done yet (section 5).
+**Status:** 2026-10-24. The k6 script (`loadtest/k6/baseline.js`) works. Three full runs ("pilot 1" to "pilot 3") went from a laptop over Tailscale against the on-prem Swarm, without bursting. They agree on job time and capacity (2.3 jobs/s). Pilots 1 and 2 showed an autoscaler oscillation in the warm-up; after the scale-down rule was changed to a 300 s stabilization window, pilot 3 shows none and is the Swarm on-prem reference (section 4). The load generator is the laptop, not an AWS host ([ADR 0008](adrs/0008-run-k6-from-the-laptop-not-an-aws-host.md)). Two short experiments on 2026-11-08 added one AWS burst node (section 4.1). Burst run 1 on 2026-11-16 used the burst controller with the full profile (section 4.2): 44 % more throughput, with one task left Pending by Swarm. The run script that writes Grafana annotations, burst runs 2 and 3, two more on-prem runs and the Kubernetes runs are not done yet (section 5).
 
 **Audience:** anyone running or changing the load test, or reading the results in the report.
 
@@ -121,12 +121,59 @@ Saturated throughput is the rate over the 30 s windows between about t+100 s and
 
 **Limits.** One short run per instance type, with fixed replicas and no autoscaler, so neither the scale-up behaviour nor the frozen 9-minute profile was tested. Run 1 and run 2 were 22 minutes apart on the same evening.
 
+## 4.2 Burst run 1 (2026-11-16, Swarm, controller-driven)
+
+The first full run with automatic bursting: the frozen 9-minute profile, the replica controller between 1 and 10 replicas (`max_replicas: 10`), and the burst controller adding and removing up to two `c7a.large` nodes on its own ([burst.md](burst.md)). Everything else as in pilot 3: worker image `sha-5de4c05`, image set v2, preset `medium`, k6 from the laptop. k6 ran 16:14:51–16:23:52 UTC (t = 0 at k6 start). Summary: `loadtest/results/swarm-burst-1.json`; the other figures are from Prometheus, the burst controller's log and the Auto Scaling group's activity history.
+
+**Validity.** 1,585 jobs sent, 0 failed, 0 dropped iterations, so the cluster received the frozen load. Two of the §3 conditions were not met: the laptop ran on battery and on a mobile hotspot, not the network of the pilots. Acceptance times were higher (p95 32 ms, max 2.4 s, against 10 ms and 153 ms in pilot 3), but the open model sends at the set rate regardless, and none of the cluster figures below depend on the laptop's network.
+
+| | Pilot 3 (on-prem, max 6) | Burst run 1 (max 10, 2 burst nodes) |
+|---|---|---|
+| Jobs sent (failed, dropped) | 1,585 (0, 0) | 1,585 (0, 0) |
+| Queue peak | 448 | **167** (t+535 s) |
+| Drain: peak to empty queue | 3 min 10 s | **60 s** |
+| k6 start to empty queue | 12.2 min | **9.9 min** |
+| Throughput while overloaded | 2.36 jobs/s (6 replicas) | **3.40 jobs/s** (9 replicas: on-prem 2.33, AWS 1.07) |
+| Throughput during the drain | 2.35 jobs/s | 3.38 jobs/s |
+| Job duration, median / p95 | 2.60 / 2.97 s | on-prem 2.63 / 2.98 s, AWS 2.77 / 3.53 s |
+| Replicas dipped during the run | no | no |
+| Queue wait, median (rough) | 70 s | 31 s |
+| Burst instance time (cost) | none | 29.0 instance-minutes (about $0.06) |
+
+On-prem CPU was 99.4–99.5 % busy while overloaded, steal stayed at 0, `swarm-ctl` peaked at 6.5 % and `ts-gateway` at 8 % (0.8 % in the pilots: it now carries the burst nodes' traffic).
+
+**Timeline.**
+
+| UTC | t | Event |
+|---|---|---|
+| 16:15:34 | +43 s | First worker task Pending (replicas 6 → 7 in the warm-up) |
+| 16:15:44 | +53 s | Pending for 10 s: desired capacity 0 → 1 (AWS launch at 16:15:49) |
+| 16:17:21 | +150 s | First job finished on AWS: **107 s from the first Pending task** |
+| 16:19:03–16:19:30 | +252–279 s | Replicas 7 → 10; 3 tasks Pending, one fits on the first node |
+| 16:19:19 | +268 s | Desired capacity 1 → 2 (launch at 16:19:28); the node is ready at 16:20:51 |
+| 16:23:46 | +535 s | Queue peak, 167 |
+| 16:24:46 | +595 s | Queue empty |
+| 16:29:50 | +899 s | Replicas 10 → 1, after the 300 s stabilization window |
+| 16:31:45–16:32:36 | | Both nodes drained, terminated and removed, one after the other |
+
+The nodes joined the swarm 68 s and 77 s after launch, in line with the 76 s measured on 2026-11-08 ([burst.md](burst.md) §9).
+
+**Finding 1: bursting raised throughput by 44 % and cut the queue peak by 63 %.** On-prem held its plateau (2.33 jobs/s against 2.36 in pilot 3), so the burst nodes added capacity without disturbing it. 3.40 jobs/s is exactly what 9 replicas predict: 2.33 + 3 × 0.357, the per-replica rate of `c7a.large` measured in §4.1. It is still below the 3.7 jobs/s arrival rate, which is why the queue kept growing to 167 instead of levelling off.
+
+**Finding 2: Swarm left one task Pending for the whole overload, so the burst ran with 9 workers instead of 10.** At 16:19:03 the task `hba_worker.9` failed to schedule (`no suitable node (insufficient resources on 4 nodes; scheduling constraints not satisfied on 1 node)`). When the second node joined at 16:20:51, Swarm placed the other Pending task there but not this one, although the node still had one free CPU, and the task's status was never updated again. The scheduler didn't retry it after the first failure. The burst controller saw the task (Pending 1 until the end) but could not add a third node, because `max_nodes` is 2. Two minutes into the overload, one of the four AWS replicas was missing, about 0.36 jobs/s. The cause inside Swarm is not isolated. Whether the Kubernetes scheduler retries in the same situation is a point for the Kubernetes runs.
+
+**Finding 3: the warm-up alone triggered the first node.** At 1.4 jobs/s the queue grew while one replica worked, and the replica controller asked for 7 replicas (ceil(depth / 5)) at t+40 s. The seventh task found no room on-prem, so a node was launched in the warm-up, when on-prem alone would have coped. The node arrived in time for the overload, but it was paid for from the first minute.
+
+**Finding 4: half of the burst cost came after the queue was empty.** Of the 29 instance-minutes, 14.7 fell after 16:24:46: the replicas stay at 10 for the 300 s stabilization window, then a node must be unneeded for 120 s before it is drained. Both rules are there against flapping ([autoscaler.md](autoscaler.md) §4, [burst.md](burst.md) §4); this is their price in a burst.
+
+**Limits.** One run. The battery and the hotspot break two of the §3 conditions. With 9 workers instead of 10, this run does not show the designed burst capacity; run 2 and 3 decide whether finding 2 is repeatable.
+
 ## 5. Still to do
 
 1. **k6 → Prometheus remote write** ([observability.md](observability.md) §10), so the offered rate sits on the same timeline as the queue.
 2. **A run script** that writes the `hba-run` Grafana annotations at the start and end, waits for the queue to reach 0, and exports the window with `query_range` ([observability.md](observability.md) §6).
 3. **Pilot 3 is the Swarm on-prem reference.** Repeat it only if the policy, the presets or the profile change.
-4. **Burst runs** with the same absolute load. At 3.7 jobs/s the on-prem cluster leaves about 1.4 jobs/s uncovered; with a `c7a.large` replica about 10 % slower than an on-prem one (section 4.1), that needs four burst replicas (two nodes). Burst nodes need host metrics first (a global node-exporter service) or the CPU panels miss them.
+4. **Burst runs 2 and 3,** then **two more on-prem runs** with `max_replicas` back at 6, so each condition has three runs (pilot 3 is the first on-prem one). Burst nodes still have no host metrics (no node-exporter on them), so the CPU panels miss them.
 5. **Kubernetes.** Measure its on-prem capacity separately and report it, but drive it with the same absolute load.
 
 ## Sources
