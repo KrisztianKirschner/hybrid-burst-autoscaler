@@ -111,6 +111,16 @@ So the burst controller asks, for each burst node: **would its tasks fit elsewhe
 
 **A deliberate difference from the Cluster Autoscaler.** The Cluster Autoscaler also requires a node to be below a utilization threshold (50 % of its requests by default) before removing it. A full burst node would therefore stay, even when its pods would fit on-prem. Here the "fits elsewhere" check alone is enough, because every burst minute is paid for. The report names this difference.
 
+### 3.1 Stranded Pending tasks (added 2026-11-16)
+
+**What happened.** In burst runs 1 and 2 ([loadtest.md](loadtest.md) §4.2) a burst node joined with free slots, yet tasks stayed `Pending` until the end of the run: 1 of 4 AWS replicas was missing in run 1, 3 of 4 in run 2. Their status was never updated after their first failed placement.
+
+**Why: Swarm's scheduler stops retrying them.** When it can't place a task, it puts the task back in its queue only if the task belongs to the service's current revision ([`noSuitableNode` in `scheduler.go`](https://github.com/moby/swarmkit/blob/master/manager/scheduler/scheduler.go)). Every service update makes a new revision, a plain `scale` included ([`UpdateService` in `controlapi/service.go`](https://github.com/moby/swarmkit/blob/master/manager/controlapi/service.go)). The replica controller scales up in steps (7 → 9 → 10), so the tasks from every step but the last fall out of the queue at their next failed attempt and are never placed, not even when a node joins. On 2026-11-09 a single manual `scale` created all tasks at once, which is why the forced tests didn't show it.
+
+**The fix in the burst controller: re-create them.** If qualifying `Pending` tasks and free slots (on-prem or on a ready burst node) exist side by side for `stranded_task_grace` (15 s), the controller scales the service down by that many tasks and straight back up. Swarm removes unassigned tasks first when it scales down ([`slotsByIndex` in `replicated/slot.go`](https://github.com/moby/swarmkit/blob/master/manager/orchestrator/replicated/slot.go)), so running workers are not touched, and the new tasks belong to the current revision, so the scheduler places them. Metric: `hba_burst_respawned_tasks`.
+
+**For the comparison:** this is Swarm-specific code that Kubernetes should not need, since its scheduler retries unschedulable pods when a node is added. The Kubernetes adapter's respawn does nothing; whether it is ever triggered there is a point to check in the Kubernetes runs.
+
 ## 4. Policy
 
 The policy lives in `stacks/swarm/burst-policy.yml`, deployed like the replica policy. **Its fields are named after the Cluster Autoscaler's flags,** so the two can be compared field by field. A value differs from the Cluster Autoscaler's default only where the short load tests need it.
@@ -126,6 +136,7 @@ The policy lives in `stacks/swarm/burst-policy.yml`, deployed like the replica p
 | `replicas_per_node` | 2 | none (CA reads the node template) | | `c7a.large` has 2 vCPU (2 physical cores, §5), and each task reserves 1 CPU |
 | `service` | `hba_worker` | none (CA looks at all pods) | | |
 | `aws_region` | `eu-central-1` | `AWS_REGION` environment variable | | |
+| `stranded_task_grace` | 15 | none | | Swarm-specific workaround, §3.1. Longer than one scan, so a task the scheduler is about to place isn't re-created. |
 
 Times are plain numbers in seconds, as in the replica policy.
 

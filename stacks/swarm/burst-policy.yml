@@ -11,3 +11,6 @@ scan_interval: 10
 new_pod_scale_up_delay: 10
 scale_down_unneeded_time: 120
 max_node_provision_time: 480
+# Not a Cluster Autoscaler flag: tasks Pending while free slots exist for this long are
+# re-created, because Swarm stops retrying them (docs/burst.md §3.1)
+stranded_task_grace: 15

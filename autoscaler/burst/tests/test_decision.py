@@ -146,5 +146,42 @@ class Failures(unittest.TestCase):
         self.assertEqual(run(state).terminate, {"i-a": "drained"})
 
 
+class StrandedTasks(unittest.TestCase):
+    """Burst run 2: a node joined with one task while three tasks stayed Pending."""
+
+    def joined_with_room(self, pending=3):
+        return cluster(pending=[WAITING] * pending, nodes=[node("a", tasks=1)], desired=2,
+                       instances=[instance("a"), instance("b")])
+
+    def test_timer_starts_when_tasks_wait_beside_free_slots(self):
+        result = run(self.joined_with_room())
+        self.assertEqual(result.respawn, 0)
+        self.assertEqual(result.stranded_since, NOW)
+
+    def test_respawns_as_many_as_fit_after_the_grace(self):
+        result = decide(self.joined_with_room(), POLICY, {}, NOW, stranded_since=NOW - 15)
+        self.assertEqual(result.respawn, 1)
+        self.assertIsNone(result.stranded_since)
+
+    def test_free_onprem_slots_count_too(self):
+        state = cluster(pending=[WAITING] * 3, free=2)
+        self.assertEqual(decide(state, POLICY, {}, NOW, stranded_since=NOW - 15).respawn, 2)
+
+    def test_no_respawn_without_free_slots(self):
+        state = cluster(pending=[WAITING] * 3, nodes=[node("a", tasks=2)], desired=1, instances=[instance("a")])
+        result = decide(state, POLICY, {}, NOW, stranded_since=NOW - 60)
+        self.assertEqual(result.respawn, 0)
+        self.assertIsNone(result.stranded_since)
+
+    def test_young_tasks_are_left_to_the_scheduler(self):
+        young = PendingTask(age=5, lacks_resources=True)
+        state = cluster(pending=[young], free=2)
+        self.assertEqual(decide(state, POLICY, {}, NOW, stranded_since=NOW - 60).respawn, 0)
+
+    def test_booting_node_has_no_free_slots_yet(self):
+        state = cluster(pending=[WAITING] * 2, desired=1, instances=[instance("a")])
+        self.assertEqual(decide(state, POLICY, {}, NOW, stranded_since=NOW - 60).respawn, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

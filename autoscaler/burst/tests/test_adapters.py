@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timezone
 
 from aws_client import BurstGroup
-from swarm_adapter import build_view
+from swarm_adapter import SwarmAdapter, build_view
 
 NOW = datetime(2026, 11, 9, 12, 0, 30, tzinfo=timezone.utc).timestamp()
 CREATED = "2026-11-09T12:00:00.123456789Z"
@@ -68,6 +68,38 @@ class BuildView(unittest.TestCase):
         self.assertTrue(burst.ready)
         self.assertTrue(burst.draining)
         self.assertEqual(burst.tasks, 1)
+
+
+class FakeService:
+    def __init__(self, replicas):
+        self.attrs = {"Spec": {"Mode": {"Replicated": {"Replicas": replicas}}}}
+        self.calls = []
+
+    def scale(self, replicas):
+        self.calls.append(("scale", replicas))
+
+    def reload(self):
+        self.calls.append(("reload",))
+
+
+class FakeServices:
+    def __init__(self, service):
+        self.service = service
+
+    def get(self, name):
+        return self.service
+
+
+class FakeDocker:
+    def __init__(self, service):
+        self.services = FakeServices(service)
+
+
+class Respawn(unittest.TestCase):
+    def test_scales_down_and_back_up(self):
+        service = FakeService(replicas=10)
+        SwarmAdapter(FakeDocker(service), "hba_worker").respawn(3)
+        self.assertEqual(service.calls, [("scale", 7), ("reload",), ("scale", 10)])
 
 
 class FakeLaunchTime:
