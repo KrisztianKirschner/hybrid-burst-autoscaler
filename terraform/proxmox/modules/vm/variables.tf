@@ -46,3 +46,9 @@ variable "ssh_public_key" {
   description = "Public SSH key for the user account"
   type        = string
 }
+variable "started" {
+  description = "Whether the VM runs now and starts when the Proxmox host boots"
+  type        = bool
+  default     = true
+  nullable    = false
+}

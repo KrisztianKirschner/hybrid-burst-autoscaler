@@ -3,6 +3,10 @@ resource "proxmox_virtual_environment_vm" "vm" {
   vm_id     = var.vmid
   node_name = "pve"
 
+  # Both default to true: without on_boot, a host reboot would start a stopped cluster too
+  started = var.started
+  on_boot = var.started
+
   clone {
     vm_id   = var.template_vmid
     retries = 3

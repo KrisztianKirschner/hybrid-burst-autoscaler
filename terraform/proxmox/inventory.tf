@@ -6,5 +6,7 @@ resource "ansible_host" "vm" {
     ansible_user = "proxima"
     cluster      = each.value.cluster
     node_role    = each.value.node_role
+    # Same value on every host; Ansible builds its "active" group from it
+    active_cluster = var.active_cluster
   }
 }
