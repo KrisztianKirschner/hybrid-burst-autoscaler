@@ -70,36 +70,72 @@ class BuildView(unittest.TestCase):
         self.assertEqual(burst.tasks, 1)
 
 
-class FakeService:
-    def __init__(self, replicas):
-        self.attrs = {"Spec": {"Mode": {"Replicated": {"Replicas": replicas}}}}
-        self.calls = []
-
-    def scale(self, replicas):
-        self.calls.append(("scale", replicas))
-
-    def reload(self):
-        self.calls.append(("reload",))
+TASK_TEMPLATE = {"ContainerSpec": {"Image": "hba-worker:sha-5de4c05"}, "Networks": [{"Target": "net"}]}
 
 
-class FakeServices:
-    def __init__(self, service):
-        self.service = service
+class FakeApi:
+    """The low-level Docker API, as far as respawn uses it."""
 
-    def get(self, name):
-        return self.service
+    def __init__(self, replicas, out_of_sequence=0):
+        self.replicas = replicas
+        self.version = 100
+        self.out_of_sequence = out_of_sequence  # how many updates fail first
+        self.updates = []
+
+    def inspect_service(self, name):
+        return {
+            "ID": "svc",
+            "Version": {"Index": self.version},
+            "Spec": {
+                "Name": name,
+                "Labels": {"com.docker.stack.namespace": "hba"},
+                "Mode": {"Replicated": {"Replicas": self.replicas}},
+                "TaskTemplate": TASK_TEMPLATE,
+            },
+        }
+
+    def update_service(self, service, version, **fields):
+        if self.out_of_sequence:
+            self.out_of_sequence -= 1
+            self.version += 1
+            raise RuntimeError("rpc error: code = Unknown desc = update out of sequence")
+        self.updates.append((version, fields))
+        self.replicas = fields["mode"]["Replicated"]["Replicas"]
+        self.version += 1
+
+    def tasks(self, filters):
+        return [{}] * self.replicas
 
 
 class FakeDocker:
-    def __init__(self, service):
-        self.services = FakeServices(service)
+    def __init__(self, api):
+        self.api = api
 
 
 class Respawn(unittest.TestCase):
     def test_scales_down_and_back_up(self):
-        service = FakeService(replicas=10)
-        SwarmAdapter(FakeDocker(service), "hba_worker").respawn(3)
-        self.assertEqual(service.calls, [("scale", 7), ("reload",), ("scale", 10)])
+        api = FakeApi(replicas=10)
+        SwarmAdapter(FakeDocker(api), "hba_worker").respawn(3)
+        self.assertEqual([f["mode"]["Replicated"]["Replicas"] for _, f in api.updates], [7, 10])
+
+    def test_sends_the_current_spec_unchanged(self):
+        # Defaults filled in by docker-py's scale() made Swarm restart every task
+        api = FakeApi(replicas=10)
+        SwarmAdapter(FakeDocker(api), "hba_worker").respawn(1)
+        for _, fields in api.updates:
+            self.assertIs(fields["task_template"], TASK_TEMPLATE)
+            self.assertEqual(fields["labels"], {"com.docker.stack.namespace": "hba"})
+
+    def test_retries_when_the_version_moved(self):
+        api = FakeApi(replicas=10, out_of_sequence=2)
+        SwarmAdapter(FakeDocker(api), "hba_worker").respawn(1)
+        self.assertEqual(api.replicas, 10)
+        self.assertEqual([v for v, _ in api.updates], [102, 103])
+
+    def test_gives_up_after_repeated_conflicts(self):
+        api = FakeApi(replicas=10, out_of_sequence=99)
+        with self.assertRaises(RuntimeError):
+            SwarmAdapter(FakeDocker(api), "hba_worker").respawn(1)
 
 
 class FakeLaunchTime:
