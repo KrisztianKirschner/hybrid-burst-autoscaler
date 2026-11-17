@@ -1,0 +1,16 @@
+# Read on the Ansible controller by the k8s module's action plugin; nothing is copied to the node
+k8s_stacks_src_dir: "{{ playbook_dir }}/../../stacks/k8s/"
+k8s_stacks_kubeconfig: /etc/rancher/k3s/k3s.yaml
+k8s_stacks_namespace: hba
+
+# Same GitHub secrets as the Swarm stacks role. Each entry becomes one Kubernetes Secret;
+# its keys become files under the pod's mount path (/run/secrets/<key>)
+k8s_stacks_secrets:
+  - name: rustfs
+    data:
+      rustfs_access_key: "{{ lookup('env', 'RUSTFS_ACCESS_KEY') }}"
+      rustfs_secret_key: "{{ lookup('env', 'RUSTFS_SECRET_KEY') }}"
+
+# Applied in this order, from stacks/k8s/<name>.yml
+k8s_stacks_deploy:
+  - hba

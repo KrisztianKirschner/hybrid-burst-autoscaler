@@ -8,3 +8,5 @@ collections:
     version: "5.3.0"
   - name: community.library_inventory_filtering_v1
     version: "1.1.5"
+  - name: kubernetes.core # k8s_stacks role (kubernetes.core.k8s)
+    version: "6.6.0"

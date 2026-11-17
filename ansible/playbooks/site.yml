@@ -105,6 +105,14 @@
     - stacks
   tags: stacks
 
+- name: Deploy Kubernetes stacks
+  hosts: k8s_control
+  become: true
+  gather_facts: false
+  roles:
+    - k8s_stacks
+  tags: k8s_stacks
+
 # Either cluster: the role enables keepalived only where cluster == active_cluster
 - name: Configure cluster VIP
   hosts: cluster_nodes

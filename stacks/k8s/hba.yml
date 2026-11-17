@@ -1,0 +1,159 @@
+# The Kubernetes version of stacks/swarm/hba.yml: same images, same settings.
+# Mapping of every Swarm setting: docs/app.md §4.1. Applied by the k8s_stacks Ansible role.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hba
+---
+# Swarm publishes 8080 on every node through its routing mesh. A LoadBalancer Service does the
+# same here: k3s's ServiceLB opens 8080 on every node, so the cluster VIP and URL stay the same
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: hba
+spec:
+  type: LoadBalancer
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: hba
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      # On the control node, like Swarm's node.role == manager. The toleration lets it past the
+      # control-plane taint; the selector keeps it there
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: api
+          image: ghcr.io/krisztiankirschner/hba-api:sha-5de4c05
+          ports:
+            - name: http
+              containerPort: 8080
+---
+# Reached as redis:6379, the default HBA_REDIS of api and worker, as on Swarm's overlay
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: hba
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: hba
+spec:
+  replicas: 1
+  # One queue: never two Redis pods at once, not even during an update
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: redis
+          image: redis:8.8.3-alpine
+          ports:
+            - name: redis
+              containerPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: hba
+spec:
+  # No replicas: KEDA owns the count (M7). Until then Kubernetes starts 1, and a re-apply
+  # leaves a changed count alone (Swarm's stack deploy resets it to the file's value)
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      # Workers stay off the control node through its taint alone, like node.role == worker.
+      # Longer than one job + HBA_SHUTDOWN_TIMEOUT_SECONDS (25 s), as Swarm's stop_grace_period
+      terminationGracePeriodSeconds: 30
+      # The worker doesn't call the Kubernetes API. Without the token mount, nothing else
+      # sits under /run/secrets, where the RustFS keys go
+      automountServiceAccountToken: false
+      containers:
+        - name: worker
+          image: ghcr.io/krisztiankirschner/hba-worker:sha-5de4c05
+          ports:
+            - name: http   # /metrics, scraped by the Prometheus agent (M6)
+              containerPort: 8080
+          env:
+            - name: HBA_S3_BUCKET
+              value: hybrid-burst-data
+            # Swarm's {{.Node.Hostname}}: burst-* nodes switch the worker to S3 (HBA_TIER=auto)
+            - name: HBA_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: HBA_S3_ENDPOINT_ONPREM
+              value: http://10.0.20.30:9000   # RustFS on obs-01
+            # Same paths as the Swarm secrets, so the _FILE settings are identical
+            - name: HBA_S3_ACCESS_KEY_FILE
+              value: /run/secrets/rustfs_access_key
+            - name: HBA_S3_SECRET_KEY_FILE
+              value: /run/secrets/rustfs_secret_key
+          # 1 replica = 1 vCPU, as Swarm's limits/reservations. The request makes Kubernetes
+          # leave a pod Pending when the nodes are full, instead of oversubscribing them.
+          # No livenessProbe or readinessProbe: Swarm runs the worker with its health check off
+          # (ADR 0004)
+          resources:
+            requests:
+              cpu: "1"
+            limits:
+              cpu: "1"
+          volumeMounts:
+            - name: rustfs
+              mountPath: /run/secrets
+              readOnly: true
+      volumes:
+        # Created by the k8s_stacks role from RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY
+        - name: rustfs
+          secret:
+            secretName: rustfs
