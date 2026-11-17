@@ -105,7 +105,7 @@ spec:
         - name: controller
           # Built by .github/workflows/burst-controller.yml from autoscaler/burst/; the bump
           # workflow updates this tag together with stacks/swarm/burst.yml
-          image: ghcr.io/krisztiankirschner/hba-burst-controller:sha-037f811
+          image: ghcr.io/krisztiankirschner/hba-burst-controller:sha-bc894e0
           env:
             - name: HBA_AWS_ACCESS_KEY_ID_FILE
               value: /etc/hba-burst-aws/access_key_id
