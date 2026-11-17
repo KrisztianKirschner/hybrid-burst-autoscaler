@@ -109,4 +109,5 @@ jobs:
     uses: ./.github/workflows/bump-image.yml
     with:
       image: hba-burst-controller
-      file: stacks/swarm/burst.yml
+      # Both clusters run the same controller build
+      file: stacks/swarm/burst.yml stacks/k8s/burst.yml

@@ -16,8 +16,10 @@ spec:
   pollingInterval: 5
   # Swarm: min_replicas 1 (no scale-to-zero, which would add a cold start only Kubernetes has)
   minReplicaCount: 1
-  # Swarm: max_replicas, 3 worker nodes × 2. Raise to 10 with the burst tier (M9)
-  maxReplicaCount: 6
+  # Swarm: max_replicas 10 = 3 on-prem worker nodes × 2 + 2 burst nodes × 2. Workers that don't
+  # fit on-prem stay Pending, which is the burst controller's trigger. For an on-prem-only rerun
+  # (docs/loadtest.md §4.7) set 6 again, as Swarm did (§4.6)
+  maxReplicaCount: 10
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:

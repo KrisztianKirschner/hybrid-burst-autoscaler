@@ -1,0 +1,19 @@
+# Burst controller policy for Kubernetes (autoscaler/burst/controller.py), the counterpart of
+# stacks/swarm/burst-policy.yml. Loaded into the ConfigMap "burst-policy" by the k8s_stacks role;
+# a changed file restarts the controller. Every value below is the same as on Swarm, so both
+# orchestrators burst by the same rules; only what to watch and which group to resize differ.
+orchestrator: kubernetes
+namespace: hba
+worker_label: app=worker
+asg_name: hba-burst-k8s
+aws_region: eu-central-1
+min_nodes: 0
+max_nodes: 2
+replicas_per_node: 2         # c7a.large: 2 physical cores, 1 CPU requested per worker pod
+# Times in seconds (plain numbers, no "s")
+scan_interval: 10
+new_pod_scale_up_delay: 10
+scale_down_unneeded_time: 120
+max_node_provision_time: 480
+# Unused on Kubernetes (its scheduler retries Pending pods itself), required by the policy format
+stranded_task_grace: 15

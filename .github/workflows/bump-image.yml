@@ -10,7 +10,7 @@ on:
         type: string
         required: true
       file:
-        description: The stack file that pins the image
+        description: The stack file that pins the image; several separated by spaces
         type: string
         required: true
 
@@ -38,4 +38,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           IMAGE: ${{ inputs.image }}
           FILE: ${{ inputs.file }}
-        run: bash .github/scripts/bump-image-tag.sh "$IMAGE" "$FILE"
+        # Split the list into one argument per file
+        run: |
+          read -ra files <<< "$FILE"
+          bash .github/scripts/bump-image-tag.sh "$IMAGE" "${files[@]}"

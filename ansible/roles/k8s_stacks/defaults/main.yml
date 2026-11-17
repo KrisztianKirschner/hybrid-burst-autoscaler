@@ -4,12 +4,18 @@ k8s_stacks_kubeconfig: /etc/rancher/k3s/k3s.yaml
 k8s_stacks_namespace: hba
 
 # Same GitHub secrets as the Swarm stacks role. Each entry becomes one Kubernetes Secret;
-# its keys become files under the pod's mount path (/run/secrets/<key>)
+# its keys become files under the mount path the pod chooses (the worker: /run/secrets/<key>)
 k8s_stacks_secrets:
   - name: rustfs
     data:
       rustfs_access_key: "{{ lookup('env', 'RUSTFS_ACCESS_KEY') }}"
       rustfs_secret_key: "{{ lookup('env', 'RUSTFS_SECRET_KEY') }}"
+  # The burst controller's AWS key (docs/burst.md §6), the same as Swarm's. Only the proxmox
+  # environment holds it, so the PR dry run sees it empty and skips the check
+  - name: burst-aws
+    data:
+      access_key_id: "{{ lookup('env', 'BURST_CONTROLLER_AWS_ACCESS_KEY_ID') }}"
+      secret_access_key: "{{ lookup('env', 'BURST_CONTROLLER_AWS_SECRET_ACCESS_KEY') }}"
 
 # Config files turned into ConfigMaps (key = file name in the pod). Unlike Swarm configs they are
 # mutable, so a changed file restarts the Deployment that reads it (Swarm renames the config instead)
@@ -18,6 +24,10 @@ k8s_stacks_configs:
     key: prometheus.yml
     src: prometheus-agent.yml
     restarts: prometheus-agent
+  - name: burst-policy
+    key: policy.yml
+    src: burst-policy.yml
+    restarts: burst-controller
 
 # Helm charts (k3s HelmChart objects), applied first. k3s installs them in the background
 k8s_stacks_addons:
@@ -28,6 +38,7 @@ k8s_stacks_deploy:
   - hba
   - monitoring
   - keda
+  - burst
 
 # Stacks that use a resource type an add-on installs: the role waits for it before applying them
 k8s_stacks_crds:
