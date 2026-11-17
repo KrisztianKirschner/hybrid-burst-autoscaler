@@ -13,6 +13,10 @@ node-taint:
 {% for taint in k3s_server_taints %}
   - "{{ taint }}"
 {% endfor %}
+kube-controller-manager-arg:
+{% for arg in k3s_kube_controller_manager_args %}
+  - "{{ arg }}"
+{% endfor %}
 {% else %}
 server: "{{ k3s_server_url }}"
 {% endif %}

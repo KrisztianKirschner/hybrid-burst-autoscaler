@@ -1,0 +1,50 @@
+# The Kubernetes counterpart of stacks/swarm/autoscaler-policy.yml: the same rule, configured to
+# behave as alike as the HPA allows (decided 2026-11-17: equal rules, not each one's defaults).
+# KEDA reads the queue and hands it to a Horizontal Pod Autoscaler (keda-hpa-worker), which sets
+# the worker Deployment's replicas. Applied by the k8s_stacks role once KEDA's CRDs exist.
+# https://keda.sh/docs/latest/reference/scaledobject-spec/
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker
+  namespace: hba
+spec:
+  scaleTargetRef:
+    name: worker
+  # Swarm: poll_interval 5. The HPA asks KEDA for the queue on every sync, which k3s is set to
+  # run every 5 s (k3s role), so KEDA reads Redis at the same pace
+  pollingInterval: 5
+  # Swarm: min_replicas 1 (no scale-to-zero, which would add a cold start only Kubernetes has)
+  minReplicaCount: 1
+  # Swarm: max_replicas, 3 worker nodes × 2. Raise to 10 with the burst tier (M9)
+  maxReplicaCount: 6
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        # Swarm scales straight to ceil(depth / 5) and waits 15 s before the next scale-up. The
+        # HPA has no cooldown, but this allows the same full jump: up to 10 pods per 15 s
+        # (the default, +4 or +100 %, would take two steps from 1 to 6)
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Pods
+              value: 10
+              periodSeconds: 15
+        # Swarm: scale_down_stabilization 300, then straight down to the target
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          selectPolicy: Max
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+  triggers:
+    # https://keda.sh/docs/latest/scalers/redis-lists/
+    - type: redis
+      metadata:
+        # KEDA runs in the keda namespace, so the full service name
+        address: redis.hba.svc.cluster.local:6379
+        listName: hba:jobs
+        # Swarm: jobs_per_replica 5 → replicas = ceil(queue / 5)
+        listLength: "5"
