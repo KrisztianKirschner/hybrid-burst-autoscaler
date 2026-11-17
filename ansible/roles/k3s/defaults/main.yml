@@ -24,3 +24,10 @@ k3s_disable:
 # monitoring agent get a toleration for it. Applied only when the node first registers
 k3s_server_taints:
   - node-role.kubernetes.io/control-plane:NoSchedule
+
+# The HPA that KEDA drives, set to decide like the Swarm controller (decided 2026-11-17):
+# every 5 s instead of 15 s (Swarm: poll_interval 5), and no 10 % dead zone around the target
+# (Swarm scales to exactly ceil(depth / 5)). Cluster-wide; only the worker has an HPA
+k3s_kube_controller_manager_args:
+  - horizontal-pod-autoscaler-sync-period=5s
+  - horizontal-pod-autoscaler-tolerance=0

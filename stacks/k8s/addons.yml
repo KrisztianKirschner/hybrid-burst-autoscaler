@@ -1,0 +1,59 @@
+# Third-party add-ons, installed by k3s's built-in Helm controller: it runs a short helm-install-*
+# Job per chart, so no helm CLI is needed (https://docs.k3s.io/helm). Applied by the k8s_stacks
+# role before the other stacks. Everything runs on the control node, as the Swarm controller does,
+# so the worker nodes' CPUs stay free for the jobs being measured.
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: keda
+  namespace: kube-system
+spec:
+  # https://github.com/kedacore/charts
+  repo: https://kedacore.github.io/charts
+  chart: keda
+  version: 2.21.0
+  targetNamespace: keda
+  createNamespace: true
+  # nodeSelector/tolerations cover the operator and the metrics server; webhooks have their own
+  valuesContent: |-
+    nodeSelector:
+      node-role.kubernetes.io/control-plane: "true"
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    webhooks:
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+---
+# The "desired" and "scheduled" lines of the run dashboard, which the Swarm controller exports
+# itself: the HPA's desired replicas and the worker Deployment's replica count
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: kube-state-metrics
+  namespace: kube-system
+spec:
+  # https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-state-metrics
+  repo: https://prometheus-community.github.io/helm-charts
+  chart: kube-state-metrics
+  version: 8.8.0
+  # In hba, so the Prometheus agent reaches it as kube-state-metrics:8080
+  targetNamespace: hba
+  valuesContent: |-
+    nodeSelector:
+      node-role.kubernetes.io/control-plane: "true"
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # Only the app's namespace, and only what the dashboard uses (pods: Pending ones, for M9)
+    namespaces: hba
+    collectors:
+      - deployments
+      - horizontalpodautoscalers
+      - pods

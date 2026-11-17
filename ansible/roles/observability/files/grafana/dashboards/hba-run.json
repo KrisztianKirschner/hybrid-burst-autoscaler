@@ -165,7 +165,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "hba_autoscaler_desired_replicas{cluster=\"$cluster\"}",
+          "expr": "hba_autoscaler_desired_replicas{cluster=\"$cluster\"} or kube_horizontalpodautoscaler_status_desired_replicas{cluster=\"$cluster\", namespace=\"hba\", horizontalpodautoscaler=\"keda-hpa-worker\"}",
           "legendFormat": "desired",
           "range": true,
           "refId": "A"
@@ -176,7 +176,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "hba_autoscaler_current_replicas{cluster=\"$cluster\"}",
+          "expr": "hba_autoscaler_current_replicas{cluster=\"$cluster\"} or kube_deployment_spec_replicas{cluster=\"$cluster\", namespace=\"hba\", deployment=\"worker\"}",
           "legendFormat": "scheduled",
           "range": true,
           "refId": "B"
@@ -204,7 +204,7 @@
           "refId": "D"
         }
       ],
-      "title": "Replicas (desired/scheduled: Swarm controller)",
+      "title": "Replicas (desired/scheduled: Swarm controller or Kubernetes HPA)",
       "type": "timeseries"
     },
     {

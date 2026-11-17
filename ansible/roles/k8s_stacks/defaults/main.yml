@@ -19,7 +19,16 @@ k8s_stacks_configs:
     src: prometheus-agent.yml
     restarts: prometheus-agent
 
+# Helm charts (k3s HelmChart objects), applied first. k3s installs them in the background
+k8s_stacks_addons:
+  - addons
+
 # Applied in this order, from stacks/k8s/<name>.yml. hba first: monitoring scrapes its services
 k8s_stacks_deploy:
   - hba
   - monitoring
+  - keda
+
+# Stacks that use a resource type an add-on installs: the role waits for it before applying them
+k8s_stacks_crds:
+  keda: scaledobjects.keda.sh

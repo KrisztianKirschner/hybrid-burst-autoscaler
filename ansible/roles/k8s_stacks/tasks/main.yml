@@ -68,10 +68,36 @@
         label: "{{ item.name }}"
       register: k8s_stacks_configmaps
 
+    # No wait: a HelmChart has no ready state; k3s installs the chart in the background
+    - name: Apply the add-ons
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_stacks_kubeconfig }}"
+        state: present
+        apply: true
+        definition: "{{ lookup('ansible.builtin.file', k8s_stacks_src_dir ~ item ~ '.yml') | ansible.builtin.from_yaml_all | list }}"
+      loop: "{{ k8s_stacks_addons }}"
+
+    # A ScaledObject can only be created once KEDA's install has added that resource type.
+    # A dry run doesn't wait: before the first real install the type doesn't exist yet
+    - name: Wait for the resource types the add-ons install
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_stacks_kubeconfig }}"
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: "{{ item.value }}"
+      loop: "{{ k8s_stacks_crds | dict2items }}"
+      loop_control:
+        label: "{{ item.value }}"
+      register: k8s_stacks_crd_info
+      until: ansible_check_mode or k8s_stacks_crd_info.resources | length > 0
+      retries: 30
+      delay: 10
+
     # The module's src: would be read on the node, which has no copy of the repo. The file
     # lookup reads it on the controller (the CI runner) and passes the documents in instead.
     # apply: true keeps fields the file leaves out, such as the worker's replica count, which
-    # KEDA owns. wait: the run fails if a Deployment doesn't become available
+    # KEDA owns. wait: the run fails if a Deployment doesn't become available.
+    # Skipped only in a dry run whose resource type isn't installed yet
     - name: Apply the stacks
       kubernetes.core.k8s:
         kubeconfig: "{{ k8s_stacks_kubeconfig }}"
@@ -81,6 +107,9 @@
         wait: true
         wait_timeout: 180
       loop: "{{ k8s_stacks_deploy }}"
+      when: >-
+        item not in k8s_stacks_crds or
+        (k8s_stacks_crd_info.results | selectattr('item.key', 'equalto', item) | first).resources | length > 0
 
     # A running pod doesn't reread a changed ConfigMap; a restart replaces it with one that does
     - name: Restart Deployments whose config changed
