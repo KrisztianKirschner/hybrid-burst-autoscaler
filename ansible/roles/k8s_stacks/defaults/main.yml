@@ -11,6 +11,15 @@ k8s_stacks_secrets:
       rustfs_access_key: "{{ lookup('env', 'RUSTFS_ACCESS_KEY') }}"
       rustfs_secret_key: "{{ lookup('env', 'RUSTFS_SECRET_KEY') }}"
 
-# Applied in this order, from stacks/k8s/<name>.yml
+# Config files turned into ConfigMaps (key = file name in the pod). Unlike Swarm configs they are
+# mutable, so a changed file restarts the Deployment that reads it (Swarm renames the config instead)
+k8s_stacks_configs:
+  - name: prometheus-agent
+    key: prometheus.yml
+    src: prometheus-agent.yml
+    restarts: prometheus-agent
+
+# Applied in this order, from stacks/k8s/<name>.yml. hba first: monitoring scrapes its services
 k8s_stacks_deploy:
   - hba
+  - monitoring

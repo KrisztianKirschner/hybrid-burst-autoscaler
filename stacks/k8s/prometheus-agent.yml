@@ -1,0 +1,42 @@
+# The Kubernetes version of stacks/swarm/prometheus-agent.yml: same interval, same server, same
+# job names and labels. Only the cluster label and the way worker pods are found differ.
+# Loaded into the ConfigMap "prometheus-agent" by the k8s_stacks role.
+# https://prometheus.io/docs/prometheus/latest/configuration/configuration/
+global:
+  scrape_interval: 5s
+  # Tells Kubernetes runs from Swarm runs on obs-01 (Swarm's agent sends cluster: swarm)
+  external_labels:
+    cluster: k8s
+
+remote_write:
+  - url: http://10.0.20.30:9090/api/v1/write
+
+scrape_configs:
+  # Queue depth: redis_key_size{key="hba:jobs"}
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  # One target per worker pod, on its pod address
+  # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config
+  - job_name: worker
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [hba]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: worker
+        action: keep
+      # Ready is false while a pod is terminating, so this drops pods that are shutting down,
+      # like the Swarm agent's desired_state == running filter
+      - source_labels: [__meta_kubernetes_pod_ready]
+        regex: "true"
+        action: keep
+      # worker /metrics
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        regex: "8080"
+        action: keep
+      # Which node the pod runs on, for the 2-per-node placement check (same label as on Swarm)
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
