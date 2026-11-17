@@ -3,6 +3,8 @@
 token: "{{ k3s_token }}"
 node-ip: "{{ k3s_node_ip }}"
 {% if k3s_is_server %}
+# Secrets encrypted on disk, as Swarm's are. Existing ones stay readable; new writes are encrypted
+secrets-encryption: true
 disable:
 {% for addon in k3s_disable %}
   - {{ addon }}

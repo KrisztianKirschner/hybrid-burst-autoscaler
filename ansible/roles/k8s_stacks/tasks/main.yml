@@ -1,0 +1,63 @@
+# https://docs.ansible.com/projects/ansible/latest/collections/kubernetes/core/k8s_module.html
+- name: Install module dependencies
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+  register: k8s_stacks_deps
+
+# One item per key, so a failure prints only the empty value, never a neighbouring real one
+- name: Check that the stack secrets are set
+  ansible.builtin.assert:
+    that: item.value | length > 0
+    fail_msg: "{{ item.key }} is empty: its variable is not set in the environment (see k8s_stacks_secrets)"
+    quiet: true
+  # PR dry runs have no GitHub environment, so the environment's secrets may be empty there
+  when: not ansible_check_mode
+  loop: "{{ k8s_stacks_secrets | map(attribute='data') | map('dict2items') | flatten }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+# Fresh node + dry run: the Python library was only simulated, so the k8s module can't run
+- name: Deploy the stacks
+  when: not (ansible_check_mode and k8s_stacks_deps is changed)
+  block:
+    # The Secret needs its namespace, and the namespace is in the stack file
+    - name: Create the namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_stacks_kubeconfig }}"
+        api_version: v1
+        kind: Namespace
+        name: "{{ k8s_stacks_namespace }}"
+        state: present
+
+    # Unlike Swarm secrets these are mutable: new data is applied in place. Running pods
+    # see it in their files after a short delay; the worker reads the keys at start
+    - name: Create the Kubernetes secrets
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_stacks_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: Secret
+          type: Opaque
+          metadata:
+            name: "{{ item.name }}"
+            namespace: "{{ k8s_stacks_namespace }}"
+          stringData: "{{ item.data }}"
+      loop: "{{ k8s_stacks_secrets }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    # apply: true keeps fields the file leaves out, such as the worker's replica count, which
+    # KEDA owns. wait: the run fails if a Deployment doesn't become available
+    - name: Apply the stacks
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_stacks_kubeconfig }}"
+        state: present
+        apply: true
+        src: "{{ k8s_stacks_src_dir }}{{ item }}.yml"
+        wait: true
+        wait_timeout: 180
+      loop: "{{ k8s_stacks_deploy }}"
