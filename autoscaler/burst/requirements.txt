@@ -1,5 +1,6 @@
 boto3==1.43.126
 docker==7.2.0
+kubernetes==37.0.1
 requests==2.34.2
 prometheus-client==0.26.0
 pyyaml==6.0.3

@@ -35,7 +35,7 @@ jobs:
       - name: Syntax check and unit tests
         working-directory: autoscaler/burst
         run: |
-          python3 -m py_compile controller.py decision.py swarm_adapter.py aws_client.py
+          python3 -m py_compile controller.py decision.py swarm_adapter.py k8s_adapter.py aws_client.py
           python3 -m unittest discover tests
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
