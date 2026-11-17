@@ -1,6 +1,6 @@
 # Load Test: the k6 Script and the First Pilot
 
-**Status:** 2026-11-17. The k6 script (`loadtest/k6/baseline.js`) works. Three full runs ("pilot 1" to "pilot 3") went from a laptop over Tailscale against the on-prem Swarm, without bursting. They agree on job time and capacity (2.3 jobs/s). Pilots 1 and 2 showed an autoscaler oscillation in the warm-up; after the scale-down rule was changed to a 300 s stabilization window, pilot 3 shows none and is the Swarm on-prem reference (section 4). The load generator is the laptop, not an AWS host ([ADR 0008](adrs/0008-run-k6-from-the-laptop-not-an-aws-host.md)). Two short experiments on 2026-11-08 added one AWS burst node (section 4.1). On 2026-11-16 two as-built burst runs found two problems, Swarm stranding Pending tasks and a boot that depended on the Snap Store (sections 4.2–4.4); both were fixed the same evening. Three measured burst runs and two more on-prem runs followed (sections 4.5 and 4.6): **bursting raises throughput from 2.33 to 3.80 jobs/s (+63 %) and cuts the queue peak from 459 to 127 (−72 %), for about 5 cents of AWS time per run.** On 2026-11-17 three on-prem runs against Kubernetes (k3s + KEDA, configured to the Swarm policy) followed (section 4.7): **Kubernetes saturates 2.6 % lower (2.28 against 2.34 jobs/s) and its queue peaks 8 % higher (497 against 459), because its faster, exact autoscaler settled at 5 replicas in the warm-up where Swarm's staler signal overshot to 6.** Both effects are small next to bursting's +63 %. Kubernetes bursting and the run script that writes Grafana annotations are not done yet (section 5).
+**Status:** 2026-11-17. The k6 script (`loadtest/k6/baseline.js`) works. Three full runs ("pilot 1" to "pilot 3") went from a laptop over Tailscale against the on-prem Swarm, without bursting. They agree on job time and capacity (2.3 jobs/s). Pilots 1 and 2 showed an autoscaler oscillation in the warm-up; after the scale-down rule was changed to a 300 s stabilization window, pilot 3 shows none and is the Swarm on-prem reference (section 4). The load generator is the laptop, not an AWS host ([ADR 0008](adrs/0008-run-k6-from-the-laptop-not-an-aws-host.md)). Two short experiments on 2026-11-08 added one AWS burst node (section 4.1). On 2026-11-16 two as-built burst runs found two problems, Swarm stranding Pending tasks and a boot that depended on the Snap Store (sections 4.2–4.4); both were fixed the same evening. Three measured burst runs and two more on-prem runs followed (sections 4.5 and 4.6): **bursting raises throughput from 2.33 to 3.80 jobs/s (+63 %) and cuts the queue peak from 459 to 127 (−72 %), for about 5 cents of AWS time per run.** On 2026-11-17 three on-prem runs against Kubernetes (k3s + KEDA, configured to the Swarm policy) followed (section 4.7): **Kubernetes saturates 2.6 % lower (2.28 against 2.34 jobs/s) and its queue peaks 8 % higher (497 against 459): about half because its fresher signal settled at 5 replicas in the warm-up where Swarm's staler one overshot to 6, about half because each job runs about 2.5 % slower on the Kubernetes nodes.** Section 4.8 proves the first half by giving Kubernetes Swarm's signal: it then scales to 6 as Swarm does. Both effects are small next to bursting's +63 %. Kubernetes bursting and the run script that writes Grafana annotations are not done yet (section 5).
 
 **Audience:** anyone running or changing the load test, or reading the results in the report.
 
@@ -313,7 +313,7 @@ The three runs of each orchestrator agree as closely with each other as the Swar
 | 150–200 | 0–9 / 1–2 / **6** | 1–23 / 5 / **5** |
 | 210 | 16 / 2 / 6 | 33 / **6** / 6 |
 
-Kubernetes reacts sooner: KEDA reads the live queue, so four workers run at t+30 s against two on Swarm. The queue therefore stops at 24, and `ceil(24 / 5)` is **5**, which is the right size for the warm-up's 1.4 jobs/s (five workers do about 1.95). The Swarm controller decides on a queue 5–15 s old, by which time the real one has grown; it reaches 29 and the controller scales to **6**. The 300 s stabilization window then holds each cluster at its count. When the ramp lifts the arrivals above five workers' capacity (about t+150 s), Swarm already has its sixth worker and Kubernetes gets it only at t+210 s, when the queue passes 25. That minute short of capacity is the 8 % higher queue peak and most of the 0.4 minutes. **A staler signal acted as accidental headroom**: with this rule and a rising load, reacting exactly to the current queue is not the same as reacting well. It is the one difference that was deliberately left between the two setups. A way to isolate it: let KEDA read the same Prometheus series as the Swarm controller (KEDA's Prometheus scaler), and repeat the runs.
+Kubernetes reacts sooner: KEDA reads the live queue, so four workers run at t+30 s against two on Swarm. The queue therefore stops at 24, and `ceil(24 / 5)` is **5**, which is the right size for the warm-up's 1.4 jobs/s (five workers do about 1.95). The Swarm controller decides on a queue 5–15 s old, by which time the real one has grown; it reaches 29 and the controller scales to **6**. The 300 s stabilization window then holds each cluster at its count. When the ramp lifts the arrivals above five workers' capacity (about t+150 s), Swarm already has its sixth worker and Kubernetes gets it only at t+210 s, when the queue passes 25. That minute short of capacity accounts for **about half** of the 8 % higher queue peak; finding 2 accounts for the other half (§4.8). **A staler signal acted as accidental headroom**: with this rule and a rising load, reacting exactly to the current queue is not the same as reacting well. It is the one difference that was deliberately left between the two setups, and §4.8 confirms it by giving Kubernetes the same stale signal.
 
 **Finding 2: each job takes about 2.3 % longer on Kubernetes**, and the saturated throughput is 2.6 % lower, with the worker CPUs equally busy (99.2–99.3 %) and no steal. The image, the preset, the CPU limit (1 core per worker) and the host are the same, so the difference lies in the node around the worker. The cause is not isolated; candidates:
 
@@ -327,6 +327,55 @@ A follow-up measurement under load (per-process CPU on a worker VM during a satu
 
 **Limits.** Three runs per orchestrator; the Swarm runs are from 2026-10-24 and 2026-11-16, the Kubernetes runs from one afternoon, all on the same host. The worker runs without AppArmor confinement on Kubernetes, because containerd's default profile crashed it at start (exit 139; `stacks/k8s/hba.yml`), and under Docker's `docker-default` on Swarm; that confines rather than computes, and is not expected to change job times. The windows are derived from the k6 start and the queue, not from run annotations (§5).
 
+## 4.8 Isolating finding 1: Kubernetes with Swarm's signal (2026-11-17)
+
+§4.7 left one difference between the two setups on purpose: KEDA reads the queue from Redis at each decision, the Swarm controller reads it from Prometheus. Finding 1 put the 5-versus-6 warm-up on that difference, but only by argument. This section tests it by changing that one thing and nothing else.
+
+**The age of the signal.** Sampled every 1.3 s, the newest `redis_key_size` sample in Prometheus is **4.4–7.9 s old** (a sawtooth: the agent's 5 s scrape plus about 3 s through `remote_write` to `obs-01`). The Swarm controller decides on a value that old; KEDA reading Redis decides on the current one. Both decide only every 5 s, so that wait is the same for both.
+
+**The change: one trigger, live and temporary.** For three runs the `ScaledObject`'s Redis trigger was replaced on the cluster by KEDA's Prometheus scaler, with the Swarm controller's own query (limited to `cluster="k8s"`) and the same target:
+
+```yaml
+triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://10.0.20.30:9090
+      query: max(redis_key_size{cluster="k8s",key="hba:jobs"})
+      threshold: "5"   # like listLength: "5": ceil(queue / 5)
+```
+
+Everything else stayed as in §4.7: 5 s decisions, tolerance 0, the scale-up and scale-down rules, 1–6 replicas, the worker image and the profile. Before the runs the HPA reported `ValidMetricFound` on `s0-prometheus`, and in the first minute of run 1 it scaled on it (KEDA reads no data as 0, which would have left it at one replica). Afterwards the Ansible pipeline put the repo's settings back (run 44129361197), checked on the cluster: trigger `redis`, the HPA's custom rules, the k3s flags. Summaries: `loadtest/results/k8s-promsignal-1.json` to `-3.json`; k6 starts 15:51:59, 16:09:47 and 16:27:37 UTC; 1,585 jobs, 0 failed, 0 dropped each; same laptop conditions as §4.7.
+
+**One more run with everything at its defaults** (15:17:20 UTC, `k8s-defaults-1.json`): the HPA deciding every 15 s with its ±10 % band and its default scale-up limits (+4 pods or +100 % per 15 s), KEDA polling every 30 s, the Redis trigger. Only one run, so it is indicative only.
+
+| Three runs each (one for defaults) | Decides 6 | 6 ready | Warm-up queue peak | Queue peak | Saturated | k6 start to empty | Job median |
+|---|---|---|---|---|---|---|---|
+| Swarm (§4.6/§4.7) | 40 s | 45–55 s | 29–31 | 448–461 | 2.33–2.37 jobs/s | 12.2–12.4 min | 2.60–2.62 s |
+| Kubernetes, signal from Redis (§4.7) | 205–210 s | 205–210 s | 20–24 | 495–501 | 2.28–2.29 jobs/s | 12.7–12.8 min | 2.66–2.68 s |
+| **Kubernetes, signal from Prometheus** | **40–45 s** | **45 s** | **27–33** | **475–479** | 2.28–2.29 jobs/s | 12.6–12.7 min | 2.67–2.68 s |
+| Kubernetes, all defaults (1 run) | 40 s | 40 s | 30 | 469 | 2.30 jobs/s | 12.5 min | 2.66 s |
+
+All from [`analysis/run_metrics.py`](../analysis/run_metrics.py) (`isolation` mode).
+
+**Finding 1 is confirmed.** With Swarm's signal, Kubernetes behaves as Swarm does in the warm-up, in all three runs: the queue grows to 27–33 before the stale value shows it, the rule says six, and six workers hold through the warm-up into the ramp. The orchestrator does not decide between five and six; the age of the signal does.
+
+**It explains half of the queue gap.** The queue peak drops from about 498 to about 477, so about 20 of the roughly 40 extra jobs come from the warm-up. The other 20 stay: the saturated throughput (2.28–2.29 jobs/s) and the job time (2.67 s) are the same with either signal, so they belong to the node, not to the autoscaler (§4.7, finding 2). About 2.5 % fewer jobs per second over the four-minute overload is about 15–20 jobs, which matches.
+
+| Swarm's queue peak, about 459; Kubernetes', about 498 | Extra jobs | Kind |
+|---|---|---|
+| Fresher signal: five workers in the warm-up instead of six (finding 1) | about 20 | configuration, can be changed |
+| Slower jobs on the Kubernetes nodes (finding 2) | about 20 | the orchestrator itself |
+
+**The defaults behave like Swarm too.** Out of the box the HPA decides only every 15 s, which delays it as the stale signal does, and it reached six workers at 40 s and a queue peak of 469. One run, but in line with the three Prometheus runs.
+
+**What it means.**
+
+- **A comparison of autoscalers has to control where their signal comes from**, or it partly measures the plumbing. Here the plumbing was worth as much as the orchestrator.
+- **Reacting faster is not the same as reacting better.** With a rising load, the delay gave Swarm (and the out-of-the-box HPA) spare capacity by accident. With a steady or falling load, the fresh signal would size the cluster exactly and use less. Headroom for a ramp is better asked for on purpose, for example with a lower jobs-per-replica target, than left to a delay.
+- **What remains of Swarm against Kubernetes is about 2.5 % per job** on this workload, small next to bursting (+63 %, §4.6).
+
+**Limits.** One load profile, with a warm-up below capacity and then a ramp; another shape could favour the fresh signal. Three runs per condition, one for the defaults. The split into two halves of about 20 assumes the two effects simply add. These were temporary live changes, not changes in Git; the cluster was verified to be back at the repo's settings afterwards.
+
 ## 5. Still to do
 
 1. **k6 → Prometheus remote write** ([observability.md](observability.md) §10), so the offered rate sits on the same timeline as the queue.
@@ -335,7 +384,7 @@ A follow-up measurement under load (per-process CPU on a worker VM during a satu
 4. **Swarm: done** (§4.5, §4.6): three measured burst runs and three on-prem runs. Open: burst nodes have no host metrics (no node-exporter on them), so the CPU panels miss them.
 5. **Kubernetes on-prem: done** (§4.7): three runs, compared with Swarm by one method. The K8s on-prem settings are now frozen like the worker image: the KEDA rule (`stacks/k8s/keda.yml`), the HPA settings in the `k3s` role and the worker's AppArmor setting. Changing any of them means repeating §4.7.
 6. **Kubernetes bursting**: three runs with `maxReplicaCount: 10` and two `c7a.large` nodes, to compare with §4.6. For a later on-prem rerun, set the maximum back to 6, as Swarm did (§4.6).
-7. **Optional follow-ups to §4.7:** KEDA reading the same Prometheus series as the Swarm controller, to isolate finding 1; the same three runs with KEDA and the HPA at their defaults, for "configured equal" against "out of the box"; per-process CPU on a worker VM under load, to explain finding 2.
+7. **Follow-ups to §4.7.** Done (§4.8): KEDA reading the same Prometheus series as the Swarm controller, three runs, and one run with everything at its defaults. Open: two more default runs, if "configured equal" against "out of the box" is to be reported with three runs; per-process CPU on a worker VM under load, to explain finding 2.
 
 ## Sources
 
