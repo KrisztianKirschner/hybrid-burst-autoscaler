@@ -1,4 +1,4 @@
-# Read on the Ansible controller by the k8s module's action plugin; nothing is copied to the node
+# Read on the Ansible controller with a file lookup; nothing is copied to the node
 k8s_stacks_src_dir: "{{ playbook_dir }}/../../stacks/k8s/"
 k8s_stacks_kubeconfig: /etc/rancher/k3s/k3s.yaml
 k8s_stacks_namespace: hba
