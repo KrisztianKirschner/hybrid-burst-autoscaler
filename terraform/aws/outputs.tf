@@ -29,3 +29,7 @@ output "gateway_instance_id" {
 output "burst_asg_name" {
   value = aws_autoscaling_group.burst_swarm.name
 }
+
+output "burst_k8s_asg_name" {
+  value = aws_autoscaling_group.burst_k8s.name
+}

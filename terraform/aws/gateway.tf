@@ -1,11 +1,19 @@
 locals {
   gateway_secret_parameter = "/hba/gateway/tailscale-oauth-secret"
-  lab_swarm_block          = "10.0.20.8/29" # advertised by ts-gateway
+  # Advertised by ts-gateway. Holds both clusters: Swarm .11-.14, Kubernetes .8-.10 and .15
+  lab_swarm_block = "10.0.20.8/29"
 
   swarm_ports = {
     gossip_tcp = { protocol = "tcp", port = 7946 }
     gossip_udp = { protocol = "udp", port = 7946 }
     vxlan      = { protocol = "udp", port = 4789 }
+  }
+
+  # What a k3s agent must accept (https://docs.k3s.io/installation/requirements#networking).
+  # 6443 is the other way, burst node to k8s-ctl, and the burst group allows all outbound
+  k8s_ports = {
+    flannel_vxlan = { protocol = "udp", port = 8472 }  # pod network between nodes
+    kubelet       = { protocol = "tcp", port = 10250 } # logs, exec, node metrics
   }
 }
 
@@ -80,6 +88,29 @@ resource "aws_vpc_security_group_ingress_rule" "burst_from_burst" {
   to_port                      = each.value.port
 }
 
+
+# The same two rules for the Kubernetes ports: from the lab nodes, and between burst nodes
+resource "aws_vpc_security_group_ingress_rule" "burst_k8s_from_lab" {
+  for_each = local.k8s_ports
+
+  security_group_id = aws_security_group.burst.id
+  description       = "Kubernetes ${each.key} from the lab cluster nodes"
+  cidr_ipv4         = local.lab_swarm_block
+  ip_protocol       = each.value.protocol
+  from_port         = each.value.port
+  to_port           = each.value.port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "burst_k8s_from_burst" {
+  for_each = local.k8s_ports
+
+  security_group_id            = aws_security_group.burst.id
+  description                  = "Kubernetes ${each.key} between burst nodes"
+  referenced_security_group_id = aws_security_group.burst.id
+  ip_protocol                  = each.value.protocol
+  from_port                    = each.value.port
+  to_port                      = each.value.port
+}
 
 # Path MTU Discovery: the gateway reports "fragmentation needed" (Tailscale 1280 vs VPC 9001).
 # For ICMP, from_port is the type and to_port the code.

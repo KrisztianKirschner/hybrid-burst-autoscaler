@@ -57,3 +57,46 @@ resource "aws_launch_template" "burst_swarm" {
     }
   }
 }
+
+# The Kubernetes counterpart: everything the same as burst_swarm except the name, the boot
+# script (k3s agent instead of docker swarm join) and the Name tag. Kept as a separate resource
+# rather than a for_each over both, so the Swarm resources keep their addresses in the state
+resource "aws_launch_template" "burst_k8s" {
+  name                   = "hba-burst-k8s"
+  image_id               = data.aws_ami.ubuntu_amd64.id
+  instance_type          = "c7a.large"
+  vpc_security_group_ids = [aws_security_group.burst.id]
+
+  # SSM and S3, without keys stored on the node
+  iam_instance_profile {
+    name = aws_iam_instance_profile.burst_node.name
+  }
+
+  # IMDSv2 only; hop limit 2 so the worker pod can reach the instance role
+  metadata_options {
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
+  block_device_mappings {
+    device_name = "/dev/sda1"
+
+    ebs {
+      volume_size           = 20
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+    }
+  }
+
+  user_data = filebase64("${path.module}/templates/burst-k8s-user-data.sh")
+
+  tag_specifications {
+    resource_type = "instance"
+
+    tags = {
+      Name       = "hba-burst-k8s-node"
+      "hba:role" = "burst"
+    }
+  }
+}
