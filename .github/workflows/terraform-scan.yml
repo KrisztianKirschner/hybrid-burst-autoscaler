@@ -51,6 +51,8 @@ jobs:
 
       - name: Tflint init
         working-directory: .
+        env:
+          GITHUB_TOKEN: ${{ github.token }}   # authenticated plugin download
         run: tflint --init --chdir=terraform/${{ matrix.root }}
 
       - name: Tflint scan
