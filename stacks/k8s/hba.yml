@@ -148,6 +148,14 @@ spec:
               cpu: "1"
             limits:
               cpu: "1"
+          # containerd's default AppArmor profile (cri-containerd.apparmor.d) denies a SIGABRT that
+          # the .NET background GC thread sends during warm-up (peer label "…//&unconfined" on
+          # Ubuntu 26.04), and the worker then dies with exit 139. Tested 2026-11-17: 5 of 7 workers
+          # crashed under the default profile, 0 of 12 unconfined. Swarm runs it under Docker's
+          # docker-default profile, which doesn't block this
+          securityContext:
+            appArmorProfile:
+              type: Unconfined
           volumeMounts:
             - name: rustfs
               mountPath: /run/secrets
