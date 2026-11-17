@@ -18,7 +18,7 @@ variable "ssh_public_key" {
 variable "active_cluster" {
   description = "Cluster whose VMs are powered on: swarm, k8s or none"
   type        = string
-  default     = "k8s"
+  default     = "swarm"
 
   # A typo would match no cluster and stop every cluster VM
   validation {
