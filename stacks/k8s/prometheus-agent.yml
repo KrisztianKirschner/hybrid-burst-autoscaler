@@ -24,6 +24,12 @@ scrape_configs:
     static_configs:
       - targets: ["kube-state-metrics:8080"]
 
+  # The burst controller's metrics (hba_burst_*): Pending pods, nodes, join time. Same job name
+  # as on Swarm, so the dashboard's burst panels work for both
+  - job_name: burst-controller
+    static_configs:
+      - targets: ["burst-controller:8000"]
+
   # One target per worker pod, on its pod address
   # https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config
   - job_name: worker

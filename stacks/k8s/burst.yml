@@ -1,0 +1,132 @@
+# The burst controller on Kubernetes: the counterpart of stacks/swarm/burst.yml, with the same
+# image and, in burst-policy.yml, the same policy. Applied by the k8s_stacks role; the ConfigMap
+# "burst-policy" and the Secret "burst-aws" are made by the role (docs/burst.md).
+#
+# Its permissions replace Swarm's root access to the Docker socket: read nodes and pods, cordon
+# (patch) and delete nodes, evict worker pods. Nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: burst-controller
+  namespace: hba
+---
+# Nodes are cluster-wide, and so are the other pods whose CPU requests use up worker slots
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hba-burst-controller
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, patch, delete]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hba-burst-controller
+subjects:
+  - kind: ServiceAccount
+    name: burst-controller
+    namespace: hba
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hba-burst-controller
+---
+# Evicting is limited to the app's namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: burst-controller
+  namespace: hba
+rules:
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: burst-controller
+  namespace: hba
+subjects:
+  - kind: ServiceAccount
+    name: burst-controller
+    namespace: hba
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: burst-controller
+---
+# For the Prometheus agent: burst-controller:8000 (hba_burst_* metrics)
+apiVersion: v1
+kind: Service
+metadata:
+  name: burst-controller
+  namespace: hba
+spec:
+  selector:
+    app: burst-controller
+  ports:
+    - name: metrics
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: burst-controller
+  namespace: hba
+spec:
+  replicas: 1
+  # Never two at once: both would resize the Auto Scaling group
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: burst-controller
+  template:
+    metadata:
+      labels:
+        app: burst-controller
+    spec:
+      serviceAccountName: burst-controller
+      # On the control node, like Swarm's node.role == manager
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: controller
+          # Built by .github/workflows/burst-controller.yml from autoscaler/burst/; the bump
+          # workflow updates this tag together with stacks/swarm/burst.yml
+          image: ghcr.io/krisztiankirschner/hba-burst-controller:sha-037f811
+          env:
+            - name: HBA_AWS_ACCESS_KEY_ID_FILE
+              value: /etc/hba-burst-aws/access_key_id
+            - name: HBA_AWS_SECRET_ACCESS_KEY_FILE
+              value: /etc/hba-burst-aws/secret_access_key
+          ports:
+            - name: metrics
+              containerPort: 8000
+          volumeMounts:
+            # HBA_POLICY_FILE in the image: /etc/hba-burst-controller/policy.yml
+            - name: policy
+              mountPath: /etc/hba-burst-controller
+              readOnly: true
+            # Not under /run/secrets, where the service account token is mounted
+            - name: aws
+              mountPath: /etc/hba-burst-aws
+              readOnly: true
+      volumes:
+        - name: policy
+          configMap:
+            name: burst-policy
+        - name: aws
+          secret:
+            secretName: burst-aws
