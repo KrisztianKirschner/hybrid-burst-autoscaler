@@ -61,6 +61,34 @@
     - swarm
   tags: swarm
 
+# Server before agents: the agents join the API on the control node
+- name: Install k3s server
+  hosts: k8s_control
+  become: true
+  gather_facts: false
+  roles:
+    - k3s
+  tags: k3s
+
+- name: Join k3s agents
+  hosts: k8s_workers
+  become: true
+  gather_facts: false
+  roles:
+    - k3s
+  tags: k3s
+
+- name: Check the k3s nodes
+  hosts: k8s_control
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Wait for every node to be Ready
+      ansible.builtin.include_role:
+        name: k3s
+        tasks_from: ready
+  tags: k3s
+
 - name: Install Node Exporter
   hosts: all
   become: true

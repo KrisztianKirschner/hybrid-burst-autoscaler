@@ -632,7 +632,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(redis_key_size,cluster)",
+        "definition": "label_values(node_uname_info{cluster!=\"none\"},cluster)",
         "hide": 0,
         "includeAll": false,
         "label": "Cluster",
@@ -641,10 +641,10 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(redis_key_size,cluster)",
+          "query": "label_values(node_uname_info{cluster!=\"none\"},cluster)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "regexApplyTo": "value",
         "skipUrlSync": false,

@@ -1,0 +1,13 @@
+# Run on the control node after every node has joined. Fails the run if the cluster
+# doesn't come up, so a broken install is visible in CI rather than at M5.
+# ">=": burst nodes can join on top of the on-prem ones later
+- name: Wait until every Kubernetes node is Ready
+  ansible.builtin.command: /usr/local/bin/k3s kubectl get nodes --no-headers
+  register: k3s_nodes
+  changed_when: false
+  until: >-
+    k3s_nodes.rc == 0 and
+    (k3s_nodes.stdout_lines | select('search', ' Ready ') | list | length) >= (groups['k8s'] | length)
+  retries: 30
+  delay: 10
+  when: not ansible_check_mode

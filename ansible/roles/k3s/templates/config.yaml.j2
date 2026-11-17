@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+# https://docs.k3s.io/installation/configuration#configuration-file
+token: "{{ k3s_token }}"
+node-ip: "{{ k3s_node_ip }}"
+{% if k3s_is_server %}
+disable:
+{% for addon in k3s_disable %}
+  - {{ addon }}
+{% endfor %}
+node-taint:
+{% for taint in k3s_server_taints %}
+  - "{{ taint }}"
+{% endfor %}
+{% else %}
+server: "{{ k3s_server_url }}"
+{% endif %}
