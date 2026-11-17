@@ -1,10 +1,11 @@
-"""Run figures for the load-test comparison (docs/loadtest.md §4.7), from Prometheus on obs-01.
+"""Run figures for the load-test comparison (docs/loadtest.md §4.7, §4.8), from Prometheus on obs-01.
 
 Every figure is computed the same way for Swarm and Kubernetes runs, from the k6 start time and
 the queue itself, so the two orchestrators are compared by one method. Reproduces the hand-made
 Swarm figures of docs/loadtest.md §4 and §4.6.
 
-    python analysis/run_metrics.py                  # the run table
+    python analysis/run_metrics.py                  # the run table (§4.7)
+    python analysis/run_metrics.py isolation        # all conditions, compact (§4.8)
     python analysis/run_metrics.py idle k8s 2026-11-17T14:44:30Z [minutes]   # idle CPU per VM
 
 Needs the tailnet (obs-01 at 10.0.20.30) and nothing outside the standard library.
@@ -27,6 +28,16 @@ RUNS = [
     ("k8s on-prem 1", "k8s", "2026-11-17T13:50:17Z"),
     ("k8s on-prem 2", "k8s", "2026-11-17T14:08:14Z"),
     ("k8s on-prem 3", "k8s", "2026-11-17T14:26:09Z"),
+]
+
+# §4.8: temporary live changes on the Kubernetes cluster, reverted afterwards
+ISOLATION_RUNS = [
+    # KEDA's Prometheus scaler on the Swarm controller's query: Swarm's signal age, otherwise §4.7
+    ("k8s prom 1", "k8s", "2026-11-17T15:51:59Z"),
+    ("k8s prom 2", "k8s", "2026-11-17T16:09:47Z"),
+    ("k8s prom 3", "k8s", "2026-11-17T16:27:37Z"),
+    # KEDA and the HPA at their defaults (15 s decisions, ±10 % band, default scale-up limits)
+    ("k8s defaults", "k8s", "2026-11-17T15:17:20Z"),
 ]
 
 # The autoscaler's decision and the replica count it set: Swarm controller, or the HPA KEDA drives
@@ -136,6 +147,24 @@ def print_table():
         print(f"{key:{width}}  " + "  ".join(f"{r[key]:>18}" for r in rows))
 
 
+def print_isolation():
+    """One line per run, all conditions: the main runs and the §4.8 experiments."""
+    columns = {
+        "desired 6 after k6 start": "decides 6",
+        "6 ready (warmed, scraped) after k6 start": "6 ready",
+        "warm-up queue peak (first 150 s)": "warm-up peak",
+        "queue peak": "queue peak",
+        "throughput saturated (t+300 s → peak)": "saturated",
+        "k6 start → empty queue": "to empty",
+        "job duration saturated, median / p95": "job med / p95",
+    }
+    print(f"{'':16}" + "".join(f"{label:>16}" for label in columns.values()))
+    for run in RUNS + ISOLATION_RUNS:
+        row = run_figures(*run)
+        cells = (row[key].split(" (t+")[0].replace(" jobs/s", "") for key in columns)
+        print(f"{row['run']:16}" + "".join(f"{cell:>16}" for cell in cells))
+
+
 def print_idle(cluster, start_iso, minutes=10):
     """CPU busy per VM while the cluster is idle: queue 0, one idle worker replica."""
     t1 = epoch(start_iso) + minutes * 60
@@ -156,5 +185,7 @@ def print_idle(cluster, start_iso, minutes=10):
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "idle":
         print_idle(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 10)
+    elif len(sys.argv) > 1 and sys.argv[1] == "isolation":
+        print_isolation()
     else:
         print_table()
