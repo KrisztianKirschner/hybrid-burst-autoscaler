@@ -50,6 +50,24 @@
         label: "{{ item.name }}"
       no_log: true
 
+    # Before the stacks, so a new Deployment finds its ConfigMap on first start
+    - name: Create the config maps
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_stacks_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ item.name }}"
+            namespace: "{{ k8s_stacks_namespace }}"
+          data: "{{ {item.key: lookup('ansible.builtin.file', k8s_stacks_src_dir ~ item.src)} }}"
+      loop: "{{ k8s_stacks_configs }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: k8s_stacks_configmaps
+
     # The module's src: would be read on the node, which has no copy of the repo. The file
     # lookup reads it on the controller (the CI runner) and passes the documents in instead.
     # apply: true keeps fields the file leaves out, such as the worker's replica count, which
@@ -63,3 +81,13 @@
         wait: true
         wait_timeout: 180
       loop: "{{ k8s_stacks_deploy }}"
+
+    # A running pod doesn't reread a changed ConfigMap; a restart replaces it with one that does
+    - name: Restart Deployments whose config changed
+      ansible.builtin.command: >-
+        /usr/local/bin/k3s kubectl -n {{ k8s_stacks_namespace }}
+        rollout restart deployment/{{ item.item.restarts }}
+      loop: "{{ k8s_stacks_configmaps.results | selectattr('changed') | list }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      changed_when: true

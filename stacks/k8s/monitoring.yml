@@ -1,0 +1,132 @@
+# The Kubernetes version of stacks/swarm/monitoring.yml: same images, same settings.
+# Applied by the k8s_stacks role after hba.yml; the agent's config is the ConfigMap
+# "prometheus-agent", made by the role from stacks/k8s/prometheus-agent.yml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  namespace: hba
+spec:
+  selector:
+    app: redis-exporter
+  ports:
+    - name: metrics
+      port: 9121
+      targetPort: 9121
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: hba
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      # On the control node, like Swarm's node.role == manager
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      automountServiceAccountToken: false
+      containers:
+        # https://github.com/oliver006/redis_exporter
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.93.0-alpine
+          env:
+            - name: REDIS_ADDR
+              value: redis://redis:6379
+            - name: REDIS_EXPORTER_CHECK_SINGLE_KEYS
+              value: db0=hba:jobs
+          ports:
+            - name: metrics
+              containerPort: 9121
+---
+# Swarm's agent reads the Docker socket as root. Here kubernetes_sd asks the Kubernetes API
+# instead, with this account: read-only, and only for pods in the hba namespace
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-agent
+  namespace: hba
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-agent
+  namespace: hba
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-agent
+  namespace: hba
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-agent
+    namespace: hba
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-agent
+  namespace: hba
+spec:
+  replicas: 1
+  # One agent at a time: two would send every sample to obs-01 twice during an update
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prometheus-agent
+  template:
+    metadata:
+      labels:
+        app: prometheus-agent
+    spec:
+      serviceAccountName: prometheus-agent
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        # https://prometheus.io/docs/prometheus/latest/command-line/prometheus/
+        # Same tag as the server on obs-01 and the Swarm agent
+        - name: prometheus-agent
+          image: prom/prometheus:v3.15.0
+          args:
+            - --agent
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.agent.path=/prometheus
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+              readOnly: true
+            - name: data
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-agent
+        # Write-ahead log of samples not yet sent to obs-01. Swarm keeps it in a volume; here it
+        # is lost when the pod is replaced, which only matters if obs-01 is down at that moment
+        - name: data
+          emptyDir: {}
