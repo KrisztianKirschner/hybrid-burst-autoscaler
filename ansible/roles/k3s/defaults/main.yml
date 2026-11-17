@@ -1,0 +1,26 @@
+# https://docs.k3s.io/installation/configuration
+
+# Pinned. A bump reinstalls on the next run: the tasks compare it with `k3s --version`
+k3s_version: v1.37.2+k3s1
+
+# Shared join secret, set once in the proxmox GitHub environment. Burst nodes use it too (M9)
+k3s_token: "{{ lookup('env', 'K3S_TOKEN') }}"
+
+k3s_is_server: "{{ inventory_hostname in groups['k8s_control'] }}"
+k3s_service: "{{ 'k3s' if k3s_is_server else 'k3s-agent' }}"
+k3s_node_ip: "{{ ansible_host }}"
+
+# Agents join the control node directly. The cluster VIP is for the app, not the Kubernetes API
+k3s_server_url: "https://{{ hostvars[groups['k8s_control'][0]]['ansible_host'] }}:6443"
+
+# Bundled add-ons this project doesn't use: no Traefik on either cluster (same request path
+# as Swarm), KEDA doesn't need metrics-server, and Redis has no volume
+k3s_disable:
+  - traefik
+  - metrics-server
+  - local-storage
+
+# Keeps job workers off the control node, as on swarm-ctl. api, redis, KEDA and the
+# monitoring agent get a toleration for it. Applied only when the node first registers
+k3s_server_taints:
+  - node-role.kubernetes.io/control-plane:NoSchedule

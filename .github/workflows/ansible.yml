@@ -156,6 +156,7 @@ jobs:
           # Only in the proxmox environment, so the PR dry run above doesn't get them
           BURST_CONTROLLER_AWS_ACCESS_KEY_ID: ${{ secrets.BURST_CONTROLLER_AWS_ACCESS_KEY_ID }}
           BURST_CONTROLLER_AWS_SECRET_ACCESS_KEY: ${{ secrets.BURST_CONTROLLER_AWS_SECRET_ACCESS_KEY }}
+          K3S_TOKEN: ${{ secrets.K3S_TOKEN }}
         run: ansible-playbook playbooks/site.yml --limit active --diff
 
       - name: Remove SSH key
