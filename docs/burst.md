@@ -1,6 +1,6 @@
 # Burst Controller
 
-**Status:** 2026-11-09. The launch template, the Auto Scaling group and the boot script are built and tested (`terraform/aws/burst.tf`, `autoscaling.tf`): a node launched by setting the desired capacity joins the swarm by itself and takes jobs ([loadtest.md](loadtest.md) §4.1). The burst controller (`autoscaler/burst/`) runs on the swarm: forced tests on 2026-11-09 and burst run 1 on 2026-11-16 ([loadtest.md](loadtest.md) §4.2) added and removed two nodes without manual help. The decisions are recorded in [ADR 0009](adrs/0009-separate-burst-controller-resizing-an-auto-scaling-group.md); the build order is in §10.
+**Status:** 2026-11-18. **Built and measured on both orchestrators.** On Swarm: the launch template, the Auto Scaling group `hba-burst-swarm` and its boot script (`terraform/aws/burst.tf`, `autoscaling.tf`), and the controller (`autoscaler/burst/`) with its Swarm adapter; three measured burst runs on 2026-11-16 ([loadtest.md](loadtest.md) §4.5). On Kubernetes: a second group `hba-burst-k8s` whose nodes join as k3s agents (§7.1), and the same controller with a Kubernetes adapter (§1.1); three measured burst runs on 2026-11-17 ([loadtest.md](loadtest.md) §4.9). The decisions are recorded in [ADR 0009](adrs/0009-separate-burst-controller-resizing-an-auto-scaling-group.md); the build order is in §10.
 
 **Audience:** anyone building or changing the burst tier (Terraform, user data, the controller), and anyone comparing it with the Kubernetes Cluster Autoscaler.
 
@@ -54,6 +54,20 @@ The two controllers never talk to each other. Each reads the cluster's state and
 - **It wouldn't carry over to Kubernetes,** where the replica count belongs to KEDA.
 
 **The cost is a short delay:** one replica-controller loop plus the Pending grace time (§4), roughly 10–20 s. A node takes over a minute to boot and join (§9), so the delay is small next to it.
+
+### 1.1 The Kubernetes adapter (added 2026-11-17)
+
+The decision function (`autoscaler/burst/decision.py`) is shared; only the adapter that reads the cluster and carries out a scale-down differs. The policy key `orchestrator: kubernetes` picks it (`controller.py`; Swarm stays the default).
+
+| Step | Swarm adapter (Docker API) | Kubernetes adapter (`k8s_adapter.py`, Kubernetes API) |
+|---|---|---|
+| A task that qualifies as Pending | task `pending` with `insufficient resources` | pod with the condition `PodScheduled=False`, reason `Unschedulable`, message `Insufficient cpu` |
+| Free on-prem slots | per worker: `floor(CPUs / 1)` minus its tasks | per worker: allocatable CPU minus **every** pod's CPU request on it (CoreDNS would take 100m if it ever moved to a worker), divided by the worker's request |
+| Drain | `--availability drain` | cordon, then evict the node's pods through the Eviction API; uncordon if an eviction fails |
+| Remove | `docker node rm` | delete the Node object |
+| Re-create stranded tasks (§3.1) | needed | **not needed** (`NEEDS_RESPAWN = False`): kube-scheduler retries an unschedulable pod when a node is added |
+
+The controller runs as a Deployment on `k8s-ctl` (`stacks/k8s/burst.yml`), with its own ServiceAccount and only the rights it uses: nodes get/list/patch/delete and pods list across the cluster, and creating evictions in the `hba` namespace. 15 unit tests cover the adapter on plain API JSON (`autoscaler/burst/tests/test_k8s_adapter.py`).
 
 ## 2. Scale-up
 
@@ -121,11 +135,11 @@ So the burst controller asks, for each burst node: **would its tasks fit elsewhe
 
 **First live test (2026-11-16, 18:11–18:14), and a correction.** Two scale steps (6 → 7 → 8) stranded slot 7; the burst node joined, Swarm placed slot 8 there and left slot 7 `Pending`, and 15 s later the controller re-created it, as designed. But the first version used docker-py's `service.scale()`, which reads the spec with defaults filled in and sends that back. The stacks are deployed with `docker stack deploy`, whose specs carry no defaults, so Swarm took the request for a changed task template and restarted every running worker one by one; Swarm's own status writes then moved the service version, and the scale back up failed with `update out of sequence`, leaving 7 replicas instead of 8. The respawn now sends the service's exact current spec with only the replica count changed (what the Docker CLI does), waits until the extra tasks are marked for removal, and retries on `update out of sequence`. The replica controller still uses `scale()`: its first scale after a stack deploy restarts the running tasks too, which at the start of a run is a single task.
 
-**For the comparison:** this is Swarm-specific code that Kubernetes should not need, since its scheduler retries unschedulable pods when a node is added. The Kubernetes adapter's respawn does nothing; whether it is ever triggered there is a point to check in the Kubernetes runs.
+**For the comparison:** this is Swarm-specific code that Kubernetes doesn't need, since its scheduler retries unschedulable pods when a node is added. The Kubernetes adapter's respawn does nothing. **Confirmed 2026-11-17:** in all three Kubernetes burst runs the waiting pods started as soon as the nodes were Ready, and all four AWS workers were busy 78–82 s after the first request, against 104–367 s on Swarm ([loadtest.md](loadtest.md) §4.9, finding 3).
 
 ## 4. Policy
 
-The policy lives in `stacks/swarm/burst-policy.yml`, deployed like the replica policy. **Its fields are named after the Cluster Autoscaler's flags,** so the two can be compared field by field. A value differs from the Cluster Autoscaler's default only where the short load tests need it.
+The policy lives in `stacks/swarm/burst-policy.yml`, deployed like the replica policy. Kubernetes has its own copy, `stacks/k8s/burst-policy.yml` (a ConfigMap), with **the same values**; only the targets differ: `orchestrator: kubernetes`, `asg_name: hba-burst-k8s`, the namespace `hba` and the worker's label instead of the service name. **Its fields are named after the Cluster Autoscaler's flags,** so the two can be compared field by field. A value differs from the Cluster Autoscaler's default only where the short load tests need it.
 
 | Field | Value | Cluster Autoscaler flag | CA default | Why the value differs |
 |---|---|---|---|---|
@@ -161,7 +175,7 @@ Times are plain numbers in seconds, as in the replica policy.
 - **The cap is enforced by AWS.** `max_size = 2` holds even if the controller has a bug.
 - **It's the native pattern.** The Cluster Autoscaler on AWS works the same way, by resizing Auto Scaling groups.
 
-A Kubernetes burst tier gets its own launch template and ASG (`hba-burst-k8s`, Terraform label `burst_k8s`), because its user data joins with `kubeadm` instead of `docker swarm join`.
+The Kubernetes burst tier has its own launch template and ASG (`hba-burst-k8s`, Terraform label `burst_k8s`), with the same settings, because its user data joins as a k3s agent instead of with `docker swarm join` (§7.1). The burst security group also opens UDP 8472 (flannel's VXLAN pod network) and TCP 10250 (the kubelet: logs, exec, metrics) from the lab cluster block and between burst nodes (`terraform/aws/gateway.tf`).
 
 **Why `c7a.large`, and a correction.** The design first chose `c6a.large` by counting vCPUs: 2 vCPU, so 2 replicas, like an on-prem worker. But its 2 vCPUs are **one physical core with two threads**, so the two replicas shared a core and a job took 4.48 s against 2.53–2.60 s on-prem. `c7a.large` has 2 physical cores, and a job takes 2.78 s ([loadtest.md](loadtest.md) §4.1). It costs 34 % more per hour but 18 % less per job. `c8a.large` also has 2 physical cores at a higher clock, and wasn't chosen because it would probably be faster than an on-prem core: the goal is one AWS replica worth about one on-prem replica, so that the replica counts stay comparable.
 
@@ -171,10 +185,10 @@ The controller runs on `swarm-ctl`, on-prem, so it can't use an instance role. I
 
 | Action | Resource |
 |---|---|
-| `autoscaling:SetDesiredCapacity`, `autoscaling:TerminateInstanceInAutoScalingGroup` | only the `hba-burst-swarm` ASG |
+| `autoscaling:SetDesiredCapacity`, `autoscaling:TerminateInstanceInAutoScalingGroup` | only the two burst ASGs, `hba-burst-swarm` and `hba-burst-k8s` |
 | `autoscaling:DescribeAutoScalingGroups`, `ec2:DescribeInstances` | `*` (Describe calls can't be limited to one resource) |
 
-- **Where the key lives:** in the `proxmox` GitHub environment only, never at repository level ([security.md](security.md) §1.5, R1). The `stacks` role turns it into a Swarm secret.
+- **Where the key lives:** in the `proxmox` GitHub environment only, never at repository level ([security.md](security.md) §1.5, R1). The `stacks` role turns it into a Swarm secret, the `k8s_stacks` role into the Kubernetes Secret `burst-aws` (mounted at `/etc/hba-burst-aws`). On Kubernetes, the controller runs on `k8s-ctl`, also on-prem.
 - **What a stolen key allows:** at worst, starting 2 instances or terminating burst nodes. It can't create, read or change anything else.
 - **Limitation:** it's a long-lived key, and the report names that.
 
@@ -188,6 +202,17 @@ The node's user data, in order:
 4. **`docker swarm join --advertise-addr <private IP> --token … 10.0.20.11:2377`.** Traffic to the lab goes through the VPC route and the AWS gateway to `ts-gateway` ([network.md](network.md) §2.2). `docker swarm join` needs that tunnel to be up: on 2026-11-08 the first node failed with `DeadlineExceeded` because the AWS gateway was stopped and, once started, logged out of Tailscale. Check `tailscale status` on the gateway before a run, not only that the instance is running.
 
 **Join secrets stay out of the user data,** because the user data can be read through the metadata service. The token is fetched at boot through the instance role.
+
+### 7.1 Kubernetes boot path (added 2026-11-17)
+
+`terraform/aws/templates/burst-k8s-user-data.sh`, in the same order:
+
+1. **Hostname `burst-<instance-id>`,** before k3s starts, because Kubernetes names the node after the hostname. The worker reads the node name through the Downward API (`spec.nodeName`) and so picks S3, as on Swarm.
+2. **The AWS CLI** from the same zip installer.
+3. **The k3s join token from SSM** (`/hba/burst/k3s-token`, put there by hand once; the same token as in the `k3s` role).
+4. **`/etc/rancher/k3s/config.yaml`** with `server: https://10.0.20.8:6443` (`k8s-ctl`, not the cluster VIP, which serves the app), the token and the node's private IP, readable only by root. Then k3s's installer starts the agent, pinned to the on-prem version `v1.37.2+k3s1`.
+
+**No flannel MTU setting,** as on Swarm's overlay: TCP between a burst pod and an on-prem pod settles on the smaller MTU, and the Tailscale hop splits larger packets. The smoke test on 2026-11-17 confirmed it: `kubectl logs` (10250), Prometheus scrapes over flannel (8472) and the API (6443) all worked. A node was Ready about 52 s after the desired capacity was set (one sample; the 76 s of §9 measures a longer span, up to two running workers, so the two are not directly comparable). The like-for-like comparison is time-to-capacity in the measured runs: 77 s on Swarm, 78 s on Kubernetes ([loadtest.md](loadtest.md) §4.9).
 
 ## 8. Safety nets
 
@@ -227,15 +252,17 @@ flowchart LR
 | 2 | **Done.** Worker join token in SSM, by hand once (the token only changes when rotated) | Krisztián |
 | 3 | **Done.** User data (§7). Test it by setting the desired capacity to 1 by hand: the node must join and get tasks | Krisztián, Claude |
 | 4 | **Done.** The `hba-burst-controller` IAM user (§6), then `autoscaler/burst/`: a pure decision function (cluster state in, target out, no I/O), a Swarm adapter (Docker API) and an AWS client (boto3), plus metrics | Claude |
-| 5 | Stack, policy file, Swarm secret, `max_replicas` 10 for burst runs | Both |
-| 6 | First burst run with the frozen load profile ([loadtest.md](loadtest.md)) | Krisztián |
+| 5 | **Done.** Stack, policy file, Swarm secret, `max_replicas` 10 for burst runs | Both |
+| 6 | **Done.** Burst runs with the frozen load profile ([loadtest.md](loadtest.md) §4.2–4.5) | Krisztián |
+| 7 | **Done (2026-11-17).** Kubernetes: launch template, ASG and user data (§7.1), the k3s token in SSM, the Kubernetes adapter (§1.1), the controller's Deployment and RBAC; three burst runs ([loadtest.md](loadtest.md) §4.9) | Krisztián (Terraform, with explanations), Claude |
 
-The decision function has no Swarm-specific code. The Kubernetes adapter (Pending pods with reason `Unschedulable`, `kubectl drain`, deleting the Node object) is added with the Kubernetes cluster, so both orchestrators burst with the same logic and the same policy values.
+The decision function has no orchestrator-specific code, so both orchestrators burst with the same logic and the same policy values.
 
 ## 11. Open points
 
 - **Teardown:** a manual workflow on the Pi or a local script.
-- **Kubernetes:** the burst launch template and user data (`kubeadm join`, and where its token lives).
+- **Burst nodes have no host metrics** (no node_exporter on them), so the CPU panels miss them.
+- **Two copies of the policy** (`stacks/swarm/` and `stacks/k8s/`): a change must go into both.
 
 ## 12. Sources
 

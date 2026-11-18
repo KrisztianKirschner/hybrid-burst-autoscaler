@@ -14,7 +14,7 @@ The central argument: cloud bursting only makes economic sense if the on-prem pl
 
 **In scope:** Docker Swarm vs. Kubernetes autoscaling comparison (custom Python controller vs. KEDA `ScaledObject`); Terraform/Ansible-provisioned on-premises cluster; an AWS burst tier joined over a Tailscale mesh link; k6-driven load testing; Prometheus/Grafana observability.
 
-**Explicitly out of scope**, with full reasoning kept in `docs/decisions/`:
+**Explicitly out of scope**, with full reasoning kept in the decision records (`docs/adrs/`):
 - OpenNebula — would duplicate Proxmox's role and, more importantly, would outsource the exact bursting logic this project exists to build by hand.
-- Native Kubernetes HPA and Cluster Autoscaler/Karpenter — mentioned for context (HPA is CPU/mem-based and doesn't fit a queue-depth design; Cluster Autoscaler/Karpenter is the "real" version of the manual bursting logic built here), not implemented.
+- A CPU/memory-based HPA on its own (it doesn't fit a queue-depth design; KEDA drives an HPA with the queue instead) and Cluster Autoscaler/Karpenter (the "real" version of the bursting logic built here by hand, but with no Swarm equivalent): mentioned for context, not implemented.
 - A friend's closed-source application as the core workload — shelved over confidentiality concerns unrelated to any technical constraint.

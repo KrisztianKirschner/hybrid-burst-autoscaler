@@ -1,6 +1,6 @@
 # Ansible: Inventory, Groups and Layout
 
-**Status:** design, 2026-09-29. The Terraform side (`terraform/proxmox/inventory.tf`) exists. The Ansible files described below are being written on `feat/ansible-docker`.
+**Status:** 2026-11-18. Live: the inventory, every role below and the pipeline, for both clusters. Kubernetes was added on 2026-11-16/17 (§7), with a `k3s` and a `k8s_stacks` role. The pipeline runs with `--limit active`, so it only contacts the powered-on cluster.
 
 **Audience:** anyone running or extending the Ansible code: adding a VM, adding the Kubernetes cluster, or wiring in AWS burst workers.
 
@@ -33,21 +33,26 @@ ansible/
     02-aws_ec2.yml              # only if long-lived AWS hosts need Ansible
     99-constructed.yml          # ALL grouping rules live here
   playbooks/
-    site.yml                    # common → tailscale_routes → docker → swarm → node_exporter → stacks → keepalived → observability → rustfs
+    site.yml                    # common → tailscale → tailscale_routes → docker → swarm → k3s → node_exporter
+                                #   → stacks → k8s_stacks → keepalived → observability → rustfs
   roles/
     common/                     # base packages, timezone
+    tailscale/                  # ts-gateway: subnet router, MSS clamp, tailnet masquerade (docs/network.md §2.3)
     tailscale_routes/           # netplan return routes via ts-gateway on cluster nodes (docs/network.md §2.2)
     docker/                     # Docker engine + Compose plugin
     swarm/                      # swarm init (control) / join (workers)
+    k3s/                        # k3s server (k8s-ctl) / agent (workers), pinned version, config.yaml (docs/kubernetes.md)
     node_exporter/              # prometheus-node-exporter on every host
     observability/              # Prometheus + Grafana on obs-01 (docs/observability.md)
     rustfs/                     # RustFS (S3-compatible store) + bucket on obs-01 (docs/app.md)
     stacks/                     # copies stacks/swarm/ to swarm-ctl, deploys hba then monitoring (stacks_deploy)
+    k8s_stacks/                 # Secrets, ConfigMaps and stacks/k8s/*.yml applied on k8s-ctl (docs/kubernetes.md)
+    keepalived/                 # the cluster VIP on the active cluster (docs/cluster-vip.md)
 ```
 
 Files in `inventory/` load in **alphabetical order**, which is why they are numbered. `99-constructed.yml` must sort last: it can only group hosts that earlier sources have already loaded.
 
-**Settings live in each role's `defaults/main.yml`**, not in `group_vars/`. There is no `group_vars/` yet. If one is ever needed, put it **inside** `inventory/`, so it applies to hosts from every source, Terraform and EC2 alike. Not next to the playbooks: vars found relative to the playbook override those relative to the inventory, and two locations make it hard to see which value wins.
+**Settings live in each role's `defaults/main.yml`**, not in `group_vars/`. The only exception is `inventory/group_vars/all.yml`, for the two values several roles share: the cluster VIP and `ts-gateway`'s address. It sits **inside** `inventory/`, so it applies to hosts from every source, Terraform and EC2 alike. Not next to the playbooks: vars found relative to the playbook override those relative to the inventory, and two locations make it hard to see which value wins.
 
 ## 3. Labels (set in Terraform)
 
@@ -55,16 +60,21 @@ Every VM in `local.vms` (`terraform/proxmox/main.tf`) sets both labels. Both are
 
 | Label | Values | Meaning |
 |---|---|---|
-| `cluster` | `swarm`, `k8s` (later), `none` | Which orchestrator cluster the node belongs to |
-| `node_role` | `control`, `worker`, `observability` | What the node does in that cluster |
+| `cluster` | `swarm`, `k8s`, `none` | Which orchestrator cluster the node belongs to |
+| `node_role` | `control`, `worker`, `observability`, `router` | What the node does in that cluster |
 
-Current VMs:
+Current hosts:
 
-| VM | `cluster` | `node_role` |
+| Host | `cluster` | `node_role` |
 |---|---|---|
 | `swarm-ctl` | `swarm` | `control` |
-| `swarm-01` | `swarm` | `worker` |
+| `swarm-01..03` | `swarm` | `worker` |
+| `k8s-ctl` | `k8s` | `control` |
+| `k8s-01..03` | `k8s` | `worker` |
 | `obs-01` | `none` | `observability` |
+| `ts-gateway` | `none` | `router` |
+
+Every host also gets `active_cluster` (`swarm`, `k8s` or `none`) from Terraform's variable of the same name. The `active` group and the `keepalived` role read it.
 
 `node_role` is used instead of `role` to stay clear of Ansible's `role_*` magic variables. `control` is used instead of Swarm's own word "manager" so the same vocabulary also works for Kubernetes control-plane nodes.
 
@@ -112,9 +122,14 @@ groups:
 | `docker` | Swarm nodes + `obs-01` | `docker` role |
 | `swarm` | every Swarm node | `swarm` role |
 | `swarm_control` | `swarm-ctl` | `swarm init`, `stacks` role (`docker stack deploy`), the autoscaler (`docker service update` only works on a manager) |
-| `swarm_workers` | `swarm-01` (burst workers join at boot, outside Ansible) | `swarm join` |
+| `swarm_workers` | `swarm-01..03` (burst workers join at boot, outside Ansible) | `swarm join` |
+| `k8s` | every Kubernetes node | |
+| `k8s_control` | `k8s-ctl` | `k3s` role (server), `k8s_stacks` role (`kubectl apply` through `kubernetes.core.k8s`) |
+| `k8s_workers` | `k8s-01..03` (burst workers join at boot, outside Ansible) | `k3s` role (agent) |
 | `observability` | `obs-01` | `observability` role ([docs/observability.md](observability.md)), `rustfs` role |
-| `cluster_nodes` | every Swarm node, and the Kubernetes nodes once they exist | `tailscale_routes` role: return routes via `ts-gateway` ([docs/network.md](network.md) §2.2) |
+| `ts_routers` | `ts-gateway` | `tailscale` role |
+| `cluster_nodes` | every Swarm and Kubernetes node | `tailscale_routes` role: return routes via `ts-gateway` ([docs/network.md](network.md) §2.2); `keepalived` role |
+| `active` | the active cluster's nodes plus every `none` host | the pipeline's `--limit active` |
 
 Group names follow Ansible's variable-name rules: letters, digits and underscores, no dashes.
 
@@ -164,15 +179,16 @@ Expected `--graph` output (abridged):
 
 **Add a VM to an existing cluster** (e.g. `swarm-02`): add it to `local.vms` with its labels, apply Terraform. Nothing changes on the Ansible side. For a worker node, also raise `max_replicas` in `stacks/swarm/autoscaler-policy.yml` by 2 per node, or the autoscaler never uses it ([autoscaler.md](autoscaler.md) §3).
 
-**Add the Kubernetes cluster:** give the K8s VMs `cluster = "k8s"` and `node_role = "control"`/`"worker"` in Terraform, then add the rules in `99-constructed.yml`:
+**The Kubernetes cluster (done 2026-11-16/17).** The K8s VMs carry `cluster = "k8s"` and `node_role = "control"`/`"worker"` in Terraform, and `99-constructed.yml` has the rules:
 
 ```yaml
   k8s:          cluster == 'k8s'
   k8s_control:  cluster == 'k8s' and node_role == 'control'
   k8s_workers:  cluster == 'k8s' and node_role == 'worker'
+  active:       cluster in ['none', active_cluster]
 ```
 
-A stopped cluster's VMs stay in Terraform state and therefore in the inventory. Limit runs to the active cluster (`--limit swarm` or `--limit k8s`), or `ping` will time out on the powered-off one.
+A stopped cluster's VMs stay in Terraform state and therefore in the inventory. The pipeline runs with `--limit active`, so the powered-off set is never contacted ([ADR 0010](adrs/0010-k3s-as-a-second-vm-set-switched-by-active-cluster.md)). By hand, use the same limit: `ansible all --limit active -m ping`.
 
 **AWS burst workers are not added here.** They are configured when Packer bakes their AMI, running the same roles, and join the cluster at boot ([ADR 0003](adrs/0003-configure-onprem-with-ansible-bake-burst-workers-with-packer.md)). Keep the roles free of anything Proxmox-specific so Packer can reuse them.
 

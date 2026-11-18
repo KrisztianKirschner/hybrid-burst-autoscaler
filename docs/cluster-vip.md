@@ -1,6 +1,6 @@
 # Cluster VIP: VRRP (keepalived) and internal DNS
 
-**Status:** 2026-10-07. DNS is live: `*.hba.internal` resolves to `10.0.20.100` for tailnet clients. The `keepalived` role is being written on `feat/keepalived-vip` (variables done; template, tasks and play not yet).
+**Status:** 2026-11-18. DNS and the `keepalived` role are live on both clusters. Every load-test run, Swarm and Kubernetes, went through `api.hba.internal` → `10.0.20.100`. Which cluster holds the VIP follows `active_cluster` in Terraform (§4).
 
 **Audience:** anyone pointing a client, k6 or a dashboard at the cluster, and anyone switching between the Swarm and Kubernetes clusters.
 
@@ -18,7 +18,7 @@ client (tailnet)
   ▼
 10.0.20.100   held by exactly one cluster node at a time (keepalived MASTER)
   ▼
-routing mesh (Swarm) / ingress on hostPort (K8s) → api
+routing mesh (Swarm) / ServiceLB on :8080 (K8s) → api
 ```
 
 The DNS record never changes. VRRP moves the IP underneath it. DNS caching and TTLs, the usual weakness of DNS-based failover, therefore do not matter.
@@ -42,7 +42,7 @@ Compared with Cisco HSRP from CCNA: same idea, open standard instead of propriet
 | Setting | Value | Set in |
 |---|---|---|
 | VIP | `10.0.20.100/24` | `ansible/inventory/group_vars/all.yml` (`cluster_vip`) |
-| Cluster that may hold it | `swarm` (later `k8s`) | `group_vars/all.yml` (`active_cluster`) |
+| Cluster that may hold it | `swarm` or `k8s` | `terraform/proxmox/variables.tf` (`active_cluster`), handed to Ansible as a host variable |
 | VRRP ID | `51` | `roles/keepalived/defaults/main.yml` |
 | Advertisement interval | 1 s | role defaults |
 | Priority | control node 150, workers 100 (tie: highest IP wins) | role defaults, from the `node_role` label |
@@ -60,15 +60,17 @@ Compared with Cisco HSRP from CCNA: same idea, open standard instead of propriet
 
 The Swarm and Kubernetes node sets use the **same VIP**, so DNS, Tailscale and the k6 scripts do not change between orchestrators. Both orchestrators are then tested through an identical entry path.
 
-If both sets ran keepalived at once, each set would elect its own master (unicast peers only see their own cluster). The result is a duplicate IP and requests landing on the wrong cluster. `active_cluster` prevents this: keepalived is started and enabled only on hosts whose `cluster` label matches. On the other set it is stopped and disabled, so it does not start after a power-on either.
+If both sets ran keepalived at once, each set would elect its own master (unicast peers only see their own cluster). The result is a duplicate IP and requests landing on the wrong cluster. `active_cluster` prevents this in two ways: Terraform keeps only that cluster's VMs powered on, and keepalived is started and enabled only on hosts whose `cluster` label matches (the role stops and disables it on any other host it runs on). Since the pipeline runs with `--limit active`, the first of the two is what protects the stopped set (below).
 
-**Switching orchestrators** (once the Kubernetes set exists):
+**Switching orchestrators** (one variable since PR #90; [ADR 0010](adrs/0010-k3s-as-a-second-vm-set-switched-by-active-cluster.md)):
 
-1. Set `active_cluster: k8s`, run the keepalived play against the Swarm nodes. keepalived stops there and the VIP disappears.
-2. Power off the Swarm VMs, power on the Kubernetes VMs.
-3. Run the play against the Kubernetes nodes. Their master claims the VIP.
+1. Change `active_cluster` in `terraform/proxmox/variables.tf` (`swarm`, `k8s` or `none`) in a pull request and merge it.
+2. The Terraform pipeline powers the other set off and this set on (`started` and `on_boot` follow the variable), and records `active_cluster` on every host in the inventory.
+3. The Ansible pipeline runs with `--limit active`, so it only touches the powered-on set; there keepalived is enabled, and its master claims the VIP.
 
-On Kubernetes the ingress controller must listen on 80/443 on every node (a DaemonSet with `hostPort`), not on a NodePort, or the URL would change.
+**Never power a set on by hand in Proxmox.** With `--limit active`, Ansible never contacts the stopped set, so its keepalived keeps the state of its last run: still enabled, from when it was active. Powered on by hand, it would claim the VIP next to the active set, and both sets on at once also need more RAM than the host has ([ADR 0006](adrs/0006-cluster-size-one-control-three-workers.md)). The switch to Kubernetes was verified on 2026-11-17 (four VMs up, Swarm off, VIP on `k8s-ctl`); **the switch back to Swarm has not been run yet.**
+
+**How Kubernetes answers on the VIP.** Traefik is switched off on both clusters, so neither has an ingress controller; the request path stays the same as on Swarm. The `api` Service is of type `LoadBalancer` on port 8080, and k3s's built-in ServiceLB answers it on every node, like Swarm's routing mesh. The URL `http://api.hba.internal:8080` is the same for both. It costs one more hop: ServiceLB forwards to kube-proxy, which forwards to the pod, about 3 ms more per request ([loadtest.md](loadtest.md) §4.7, finding 3).
 
 ## 5. DNS
 

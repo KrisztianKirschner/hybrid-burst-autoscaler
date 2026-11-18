@@ -1,6 +1,6 @@
 # Network: Address Plan and Paths
 
-**Status:** 2026-10-20. On-prem lab network is live. The AWS VPC is built (`terraform/aws`, #45). The burst-tier link is **decided** ([ADR 0007](adrs/0007-site-to-site-with-two-linux-tailscale-routers.md)): two Linux Tailscale routers, `ts-gateway` in the lab (running, set up by hand) and a gateway instance in the VPC (not built). Read **section 2.2** for the current design; sections 2 and 2.1 are kept as the history of how it was reached.
+**Status:** 2026-11-18. On-prem lab network is live. The AWS VPC is built (`terraform/aws`, #45). The burst-tier link ([ADR 0007](adrs/0007-site-to-site-with-two-linux-tailscale-routers.md)) is **built and carried every burst run on both orchestrators**: two Linux Tailscale routers, `ts-gateway` in the lab (configured by the `tailscale` role) and a gateway instance in the VPC (`terraform/aws/gateway.tf`). Read **section 2.2** for the design and **section 2.3** for what changed with the Kubernetes cluster; sections 2 and 2.1 are kept as the history of how it was reached.
 
 **Audience:** anyone adding a network, a VPC, or a node that has to reach the cluster.
 
@@ -16,8 +16,9 @@ Every range below must stay distinct. Check this table before choosing a new one
 |---|---|---|
 | `10.0.20.0/24` | Lab VLAN 20, gateway OPNsense `10.0.20.1` | OPNsense, `terraform/proxmox` (VM IPs) |
 | `10.0.20.100` | Cluster VIP (keepalived), target of `*.hba.internal` ([cluster-vip.md](cluster-vip.md)) | Ansible `group_vars/all.yml`, OPNsense Unbound override |
-| `10.0.20.2` | `ts-gateway`, the lab-side Tailscale router (LXC) | Proxmox, by hand for now (section 2.2) |
-| `10.0.20.8/29` | Block advertised by `ts-gateway`: the Swarm VMs `.11–.14`. Kubernetes VMs get their own small block. | `ts-gateway` (`--advertise-routes`) |
+| `10.0.20.2` | `ts-gateway`, the lab-side Tailscale router (VM 202, 1 vCPU / 512 MB) | `terraform/proxmox/main.tf`, Ansible `tailscale` role |
+| `10.0.20.8/29` | Block advertised by `ts-gateway`: the Swarm VMs `.11–.14` and the Kubernetes VMs `.8`, `.9`, `.10`, `.15` (`k8s-ctl`, `k8s-01..03`), the four free addresses of the same block (§2.3) | `ts-gateway` (`--advertise-routes`), `terraform/proxmox/main.tf` |
+| `10.42.0.0/16`, `10.43.0.0/16` | k3s pod network (flannel VXLAN, one /24 per node) and Service addresses | k3s defaults |
 | `192.168.100.0/24` | Home network in front of OPNsense: home gateway `.1`, OPNsense WAN `.38` (double NAT) | home gateway |
 | `100.64.0.0/10` | Tailscale device IPs | Tailscale (fixed) |
 | `172.17.0.0/16` | `docker0`, Docker's default local bridge | Docker default |
@@ -187,7 +188,7 @@ flowchart LR
 
 Everything else in `10.0.20.0/24` (`obs-01`, the VIP, CI's access to non-cluster hosts) still goes through OPNsense, with its SNAT.
 
-### Lab side: `ts-gateway` (running, set up by hand)
+### Lab side: `ts-gateway` (first set up by hand as an LXC; now a Terraform VM configured by the `tailscale` role, with the same settings)
 
 | Item | Setting |
 |---|---|
@@ -223,7 +224,7 @@ network:
 
 Apply with `sudo netplan try` and confirm `ip route` still has `default via 10.0.20.1` before accepting. **Order:** routes on all VMs first, then advertise `10.0.20.8/29`. To be codified in Ansible for the Swarm group (and the Kubernetes group later), with the router address as one variable.
 
-### AWS side: gateway instance (not built)
+### AWS side: gateway instance (built, `terraform/aws/gateway.tf`)
 
 `t3.micro` in a public subnet, `source_dest_check = false`, `tag:aws-router`, advertising `10.100.0.0/16` with `--snat-subnet-routes=false --accept-routes`, key expiry disabled. VPC route table: `10.0.20.0/24` → the gateway's network interface. Gateway security group: inbound **UDP 41641** from `0.0.0.0/0`, all traffic from inside the VPC. Burst security group: 7946 tcp+udp and 4789 udp from `10.0.20.8/29` and from the VPC. Stopped between runs; started by the test runner.
 
@@ -238,7 +239,23 @@ Apply with `sudo netplan try` and confirm `ip route` still has `default via 10.0
 
 1. On `ts-gateway`: `tailscale ping <AWS gateway>` says `via <public IP>:41641`, not DERP.
 2. From a Swarm VM: `ping` a burst node's VPC address.
-3. After a burst node joins: `docker node inspect <node> --format '{{.Status.Addr}}'` shows its **`10.100.x`** address.
+3. After a burst node joins: `docker node inspect <node> --format '{{.Status.Addr}}'` shows its **`10.100.x`** address (Kubernetes: `kubectl get node <node> -o wide` shows it as INTERNAL-IP).
+
+## 2.3 Update 2026-11-17: the Kubernetes VMs, the tailnet masquerade, and MTU in practice
+
+**Addresses: the free four of the same /29.** `10.0.20.8/29` covers `.8–.15`; Swarm uses `.11–.14`, so `.8`, `.9`, `.10` and `.15` were free. The VMs use a /24 mask, so `.8` and `.15` are ordinary host addresses, not the block's network and broadcast addresses. The Kubernetes VMs got those four instead of a second advertised block or reused Swarm addresses: no new route, and both VM sets stay defined side by side, each VM with one address of its own for good. Only one set is powered on at a time ([ADR 0010](adrs/0010-k3s-as-a-second-vm-set-switched-by-active-cluster.md)).
+
+**The tailnet masquerade on `ts-gateway` (`hba-tailnet-snat.service`, `tailscale` role).** The first apply of the new VMs exposed a chicken-and-egg problem: a VM learns its return routes (§2.2) from Ansible, but Ansible on the CI Pi reaches it over the tailnet, so the replies of a VM that doesn't have the routes yet went to OPNsense and the SSH connection hung. `ts-gateway` now masquerades traffic from tailnet devices (`100.64.0.0/10`) into the lab:
+
+```sh
+iptables -t nat -A POSTROUTING -s 100.64.0.0/10 ! -o tailscale0 -j MASQUERADE
+```
+
+The VM then sees `10.0.20.2` as the source, which is on its own subnet, so it answers without any extra route. **Burst traffic is not masqueraded** (its source is `10.100.x`, not `100.x`): Swarm and Kubernetes nodes still see each other's real addresses, which both need. The chosen fix keeps every rebuilt or new VM reachable from its first boot; a second advertised block was the rejected alternative (it would have needed the routes as well).
+
+**MTU in practice: nothing is set, and nothing needs to be.** §2 planned overlay networks with MTU 1230. That was never applied on Swarm, and Kubernetes' flannel runs at its default too. TCP between a burst node and an on-prem node settles on the smaller side, the routers clamp TCP MSS to the path MTU (`hba-mss-clamp.service`, and the same rule on the AWS gateway), and the Tailscale hop splits larger packets. Every burst run on both orchestrators ran with 0 failed jobs; on Kubernetes the smoke test checked the API (6443), the kubelet (10250, `kubectl logs`) and pod traffic over flannel (8472, Prometheus scrapes) separately.
+
+**Kubernetes ports.** Burst security group: UDP 8472 (flannel VXLAN) and TCP 10250 (kubelet) from `10.0.20.8/29` and between burst nodes; a burst node reaches the API on `10.0.20.8:6443` outbound. The Tailscale policy lives in the Tailscale admin console, not in this repo; the smoke test above is what shows its grants let these ports through.
 
 ## 3. Sources
 
