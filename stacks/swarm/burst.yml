@@ -1,7 +1,7 @@
 services:
   controller:
     # Built by .github/workflows/burst-controller.yml from autoscaler/burst/
-    image: ghcr.io/krisztiankirschner/hba-burst-controller:sha-bc894e0
+    image: ghcr.io/krisztiankirschner/hba-burst-controller:sha-94237c6
     # Drains and removes nodes through the Docker socket, which needs root. Numeric on purpose:
     # the hardened image has no "root" entry in /etc/passwd
     user: "0"
