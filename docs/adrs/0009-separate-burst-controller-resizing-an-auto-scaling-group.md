@@ -93,11 +93,13 @@ Details are in [docs/burst.md](../burst.md).
 
 * Good, because it is the native tool, with no hand-written code.
 * Bad, because Swarm has no equivalent, so the two orchestrators would burst differently.
-* Bad, because CLAUDE.md scopes it as "mention, don't implement", and a mixed on-prem/AWS kubeadm cluster is not its usual setup.
+* Bad, because CLAUDE.md scopes it as "mention, don't implement", and a mixed on-prem/AWS cluster (k3s, as built: [ADR 0010](0010-k3s-as-a-second-vm-set-switched-by-active-cluster.md)) is not its usual setup.
 
 ## More Information
 
 **Correction, 2026-11-08: the instance type.** This decision first chose `c6a.large`, counting 2 vCPUs as 2 replicas. Those 2 vCPUs are one physical core with two threads, so a test with two replicas on one node ran a job in 4.48 s against about 2.6 s on-prem, and the node added 19 % throughput instead of about 33 %. `c7a.large` has 2 physical cores: 2.78 s per job and about 30 % more throughput ([loadtest.md](../loadtest.md) §4.1). The lesson for the report: vCPU count isn't core count.
+
+**Outcome, 2026-11-17: built and measured on both orchestrators.** The Kubernetes adapter shares the decision logic and the policy values; both clusters gained +62–63 % throughput from the same two nodes, with the same time-to-capacity (77 s and 78 s) and instance time ([loadtest.md](../loadtest.md) §4.9, [burst.md](../burst.md) §1.1). Swarm needed one workaround Kubernetes didn't: re-creating stranded Pending tasks ([burst.md](../burst.md) §3.1).
 
 **Revisit if** the cold start makes the burst lift too short to measure. The first fix then is to lengthen the load profile's hold stage. Packer or a warm pool comes second.
 

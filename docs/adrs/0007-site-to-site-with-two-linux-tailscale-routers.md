@@ -62,7 +62,7 @@ burst 10.100.x ─► VPC route ─► AWS gateway (t3.micro) ══ WireGuard (
 * Bad, because SSH and Ansible to the Swarm VMs now depend on `ts-gateway` as well. If it fails, disabling its route in the admin console restores the OPNsense path only after the `100.64.0.0/10` return route is also removed.
 * Bad, because every cluster VM needs two extra routes, including the Kubernetes VMs later.
 * Neutral: about $0.01/h while the gateway runs; under $1/month for its disk while stopped.
-* Neutral: overlay networks still need MTU 1230 (Tailscale 1280 minus the 50-byte VXLAN header).
+* Neutral: overlay networks still need MTU 1230 (Tailscale 1280 minus the 50-byte VXLAN header). *Correction 2026-11-17: never applied and not needed; MSS clamping on the routers and TCP's own path-MTU handling were enough on Swarm and Kubernetes ([network.md](../network.md) §2.3).*
 
 ### Lessons from the rollout (kept on purpose)
 

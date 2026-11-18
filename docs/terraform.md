@@ -1,6 +1,6 @@
 # Terraform: Layout, State and Pipeline
 
-**Status:** 2026-09-29. `terraform/proxmox` is live. `terraform/aws` is planned and not written yet.
+**Status:** 2026-11-18. `terraform/proxmox` is live with both cluster VM sets, and `active_cluster` decides which one runs (§5.1). `terraform/aws` is live too: VPC, gateway, bucket, IAM, and the two burst launch templates and Auto Scaling groups ([aws.md](aws.md), [burst.md](burst.md) §5). Parts of the layout below that say "planned" predate it.
 
 **Audience:** anyone changing the infrastructure code: adding a VM, changing the VM template, or adding the AWS root.
 
@@ -175,10 +175,20 @@ After adding or upgrading a provider, run `terraform init -upgrade` and **commit
 
 **Resize a VM:** set `cores`, `memory` or `disk_size` on its entry. Check the plan: a disk can grow in place but not shrink.
 
+### 5.1 The power switch: `active_cluster` (added 2026-11-16)
+
+Both cluster VM sets stay defined; only one runs ([ADR 0010](adrs/0010-k3s-as-a-second-vm-set-switched-by-active-cluster.md)).
+
+- **`var.active_cluster`** (`swarm`, `k8s` or `none`; `variables.tf`, with a validation so a typo can't stop every VM) is the only thing to change.
+- **The module's `started`** (bool, default `true`) sets both `started` and `on_boot`. `main.tf` passes `started = contains(["none", var.active_cluster], each.value.cluster)`: VMs of the active cluster and every `cluster = "none"` VM (`obs-01`, `ts-gateway`) run. `none` as the value stops both clusters.
+- **`inventory.tf` passes `active_cluster`** to every host, so Ansible's `active` group and the keepalived role follow the same switch ([ansible.md](ansible.md) §5).
+
+**Why this came first, before the K8s VMs.** The bpg provider starts a VM by default. Adding the four Kubernetes VMs without the switch would have powered on all eight cluster VMs: 38 GB of RAM on a 32 GB host.
+
 ## 11. Known gaps
 
 - **The user name `proxima` is written in three places:** `template.tf`, the module default in `modules/vm/variables.tf`, and `inventory.tf`. A single `local` would remove the risk of them drifting apart.
 - **`modules/vm/outputs.tf` is empty.** Nothing needs module outputs yet; the inventory reads IPs from `local.vms` directly.
-- **Powering a cluster off is not modelled yet.** The plan is to keep both cluster VM sets defined and have only the one under test running. The module has no `started` switch yet, so this is currently done by hand in Proxmox, and the next apply may try to start the VMs again.
-- **`terraform/aws` does not exist yet.** When it does, add `aws` to the `terraform-scan.yml` matrix and create a matching `terraform-aws.yml` pipeline with its own `aws` Environment.
+- ~~**Powering a cluster off is not modelled yet.**~~ Done: `active_cluster` (§5.1).
+- **Every plan shows a false diff** on `user_account.keys` for all VMs and the template. Not investigated yet.
 - **`templates/` in `terraform/proxmox` is empty.** Remove it, or use it once there is something to template.

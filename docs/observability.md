@@ -1,6 +1,6 @@
 # Observability: Prometheus and Grafana
 
-**Status:** 2026-10-16. Milestone 1 (central stack on `obs-01`) is live: deployed by the `observability` role (PR #21), all node_exporter targets up. Milestone 2 (collection inside the swarm, §5) is live since 2026-10-14: redis and worker targets up, `redis_key_size{key="hba:jobs"}` queryable on `obs-01`. Milestone 3 (the run dashboard, §6) is built and was used for the first lab scale-up test on 2026-10-16; it is provisioned from the repo once branch `feat/run-dashboard` is deployed. Milestone 4 is planned.
+**Status:** 2026-10-16. Milestone 1 (central stack on `obs-01`) is live: deployed by the `observability` role (PR #21), all node_exporter targets up. Milestone 2 (collection inside the swarm, §5) is live since 2026-10-14: redis and worker targets up, `redis_key_size{key="hba:jobs"}` queryable on `obs-01`. Milestone 3 (the run dashboard, §6) is provisioned from the repo and was used for every load-test run. Of milestone 4, the Kubernetes agent is live since 2026-11-17 (§5.1); the rest is still planned (§8).
 
 **Audience:** anyone changing scrape targets, dashboards or the monitoring stack, and anyone reading the dashboards during a test run.
 
@@ -122,6 +122,21 @@ docker run --rm -v "$PWD/stacks/swarm:/cfg:ro" --entrypoint promtool \
 2. `redis_key_size{key="hba:jobs"}` returns a value. This is the "done" condition of milestone 2.
 3. `count by (node) (up{job="worker"})` matches `docker service ps hba_worker`.
 
+### 5.1 The same collection on Kubernetes (added 2026-11-17)
+
+The pattern is the same as on Swarm ([ADR 0005](adrs/0005-in-cluster-prometheus-agent-with-remote-write.md)): an agent inside the cluster scrapes and remote-writes to `obs-01`, with the external label `cluster: k8s`, so both orchestrators' runs sit in one store and every dashboard query only switches the label.
+
+| Part | Swarm | Kubernetes (`stacks/k8s/monitoring.yml`, `prometheus-agent.yml`) |
+|---|---|---|
+| Agent | Prometheus in agent mode on `swarm-ctl` | the same image, a Deployment on `k8s-ctl` |
+| Finding the workers | `dockerswarm_sd` (tasks) | `kubernetes_sd` (pods with the worker's label), with its own ServiceAccount allowed to list pods in `hba` |
+| Queue length | redis-exporter | the same redis-exporter |
+| Desired / scheduled replicas | the controller's `hba_autoscaler_*` metrics | kube-state-metrics (chart 8.8.0, a k3s `HelmChart`): the HPA's desired replicas and the Deployment's replica count |
+| Burst controller | `hba_burst_*` on `:8000` | the same metrics, scrape job `burst-controller` |
+| Config change | redeploy | the `k8s_stacks` role runs `kubectl rollout restart` when the ConfigMap changed (a running pod doesn't reread it) |
+
+The newest queue sample in Prometheus is 4.4–7.9 s old (5 s scrape plus about 3 s of remote write), measured on 2026-11-17 ([loadtest.md](loadtest.md) §4.8). That age is what the Swarm controller decides on; KEDA reads Redis itself.
+
 ## 6. Grafana as code
 
 Nothing is configured by clicking. Everything Grafana loads comes from the role:
@@ -159,7 +174,7 @@ The first attempt committed the 15k-line JSON instead, and the first deploy ship
 
 ### The run dashboard (`hba-run`)
 
-One test run on one timeline, with shared crosshair: hovering over one panel marks the same moment in all of them. The `cluster` variable (`label_values(redis_key_size, cluster)`) switches between orchestrators; every query filters on it, so the same dashboard serves the Kubernetes runs.
+One test run on one timeline, with shared crosshair: hovering over one panel marks the same moment in all of them. The `cluster` variable (`label_values(node_uname_info{cluster!="none"}, cluster)`, so a cluster is listed as soon as its VMs exist, before any app metric does) switches between orchestrators; every query filters on it, so the same dashboard serves the Kubernetes runs.
 
 | Panel | Query (all with `cluster="$cluster"`) | Shows |
 |---|---|---|
@@ -175,7 +190,7 @@ One test run on one timeline, with shared crosshair: hovering over one panel mar
 What to know when reading or changing it:
 
 - **The four replica lines mean different things.** *Desired* is what the controller wants, *scheduled* is what Swarm reports, *ready* counts workers that are warmed up and scraped, *busy* counts workers processing a job. The gaps between them are the scaling delays. In the first lab test, ready reached 6 about 10 s after desired ([autoscaler.md](autoscaler.md) §8).
-- **Desired and scheduled come from the Swarm controller.** Kubernetes has no `hba_autoscaler_*` metrics; those two lines will need KEDA/HPA queries for `cluster="k8s"`. Ready, busy and every other panel work unchanged.
+- **Desired and scheduled come from the Swarm controller on Swarm, and from kube-state-metrics on Kubernetes.** Each query is `<swarm metric> or <kube-state-metrics metric>` (`kube_horizontalpodautoscaler_status_desired_replicas`, `kube_deployment_spec_replicas`), and the `cluster` filter leaves only one side. Ready, busy and every other panel work unchanged.
 - **Replica counts drawn as steps** (`stepAfter`): a smooth line would draw 3.5 replicas that never existed.
 - **Min interval 5 s on the agent-fed panels** (all except the two CPU panels). That makes `$__rate_interval` 20 s instead of the 60 s derived from the datasource's 15 s, matching the agent's 5 s scrape. The CPU panels keep the default, because node_exporter is scraped every 15 s.
 - **Queue wait buckets get coarse above 60 s** (60, 120, 300, 600), so high percentiles are interpolated within wide buckets.
@@ -200,10 +215,10 @@ What to know when reading or changing it:
 **Milestone 4 (weeks 8–10).**
 - k6 → Prometheus remote write over Tailscale, so the request rate is on the same timeline as queue depth.
 - node_exporter baked into the burst AMI.
-- The Kubernetes agent.
-- cAdvisor only if per-container CPU turns out to be needed.
+- ~~The Kubernetes agent.~~ Done 2026-11-17 (§5.1).
+- cAdvisor only if per-container CPU turns out to be needed. It now would be: per-process CPU on a worker VM under load is the open follow-up to explain why jobs run 2.5 % slower on Kubernetes ([loadtest.md](loadtest.md) §4.7).
 
-**Fairness between the autoscalers.** The Swarm controller sees queue depth after scrape interval + remote-write delay + its own loop. KEDA reads Redis directly, every 30 s by default. Both should react to data of about the same age, or the comparison measures the configured intervals rather than the orchestrators. The chosen values go into an ADR before the comparison runs.
+**Fairness between the autoscalers: decided and measured.** The Swarm controller sees queue depth after scrape interval + remote-write delay + its own loop; KEDA reads Redis directly. Both now decide every 5 s by the same rule, and the one difference left on purpose, the age of the signal, was then isolated with three extra runs: it decides between 5 and 6 workers in the warm-up and is worth about half of the queue-peak gap ([ADR 0012](adrs/0012-configure-keda-to-the-swarm-controllers-timing.md), [loadtest.md](loadtest.md) §4.8).
 
 ## 9. Common changes
 
